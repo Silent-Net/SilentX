@@ -38,4 +38,34 @@ final class SilentXUITests: XCTestCase {
             XCUIApplication().launch()
         }
     }
+
+    @MainActor
+    func testConnectDisconnectFlow() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let connectButton = app.buttons["Connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5), "Connect button should appear")
+        connectButton.tap()
+        // Expect either transition to Disconnect or an error alert; both are acceptable for CI sanity checks
+        let disconnectButton = app.buttons["Disconnect"]
+        let alert = app.alerts["Connection Error"]
+        XCTAssertTrue(disconnectButton.waitForExistence(timeout: 10) || alert.waitForExistence(timeout: 10), "Should either connect or show error")
+        if disconnectButton.exists {
+            disconnectButton.tap()
+        } else if alert.exists {
+            alert.buttons["OK"].tap()
+        }
+    }
+
+    @MainActor
+    func testConnectLatencyMetric() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let connectButton = app.buttons["Connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        measure(metrics: [XCTClockMetric()]) {
+            connectButton.tap()
+            _ = app.buttons["Disconnect"].waitForExistence(timeout: 10)
+        }
+    }
 }
