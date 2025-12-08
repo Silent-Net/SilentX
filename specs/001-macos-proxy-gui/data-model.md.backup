@@ -1,0 +1,379 @@
+# Data Model: SilentX
+
+**Feature**: [spec.md](spec.md) | **Plan**: [plan.md](plan.md)  
+**Date**: December 6, 2025
+
+## Entity Relationship Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              Profile                                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│ PK  id: UUID                                                             │
+│     name: String                                                         │
+│     order: Int                                                           │
+│     type: ProfileType (local|remote|icloud)                              │
+│     configurationJSON: String                                            │
+│     remoteURL: String?                                                   │
+│     autoUpdate: Bool                                                     │
+│     autoUpdateInterval: Int                                              │
+│     lastUpdated: Date?                                                   │
+│     createdAt: Date                                                      │
+└─────────────────────────────────────────────────────────────────────────┘
+         │                                    │
+         │ 1:N (cascade delete)               │ 1:N (cascade delete)
+         ▼                                    ▼
+┌─────────────────────────┐       ┌─────────────────────────┐
+│       ProxyNode         │       │      RoutingRule        │
+├─────────────────────────┤       ├─────────────────────────┤
+│ PK  id: UUID            │       │ PK  id: UUID            │
+│ FK  profile: Profile    │       │ FK  profile: Profile    │
+│     name: String        │       │     name: String        │
+│     serverAddress: String│      │     matchType: RuleMatch│
+│     port: Int           │       │     matchValue: String  │
+│     protocolType: Proto │       │     action: RuleAction  │
+│     credentials: Data?  │       │     order: Int          │
+│     order: Int          │       │     isEnabled: Bool     │
+│     isEnabled: Bool     │       └─────────────────────────┘
+│     latency: Int?       │
+└─────────────────────────┘
+
+┌─────────────────────────┐
+│      CoreVersion        │
+├─────────────────────────┤
+│ PK  version: String     │
+│     downloadURL: String │
+│     localPath: String?  │
+│     downloadDate: Date? │
+│     isActive: Bool      │
+│     fileHash: String?   │
+└─────────────────────────┘
+```
+
+## Entities
+
+### Profile
+
+The central entity representing a complete proxy configuration. Can be local (user-created), remote (imported from URL), or iCloud (synced).
+
+| Attribute | Type | Constraints | Description |
+|-----------|------|-------------|-------------|
+| id | UUID | PK, unique | Primary identifier |
+| name | String | required | User-facing display name |
+| order | Int | default: 0 | Sort order in list |
+| type | ProfileType | required | Source type (local, remote, icloud) |
+| configurationJSON | String | default: "{}" | Raw Sing-Box JSON config |
+| remoteURL | String? | optional | Source URL for remote profiles |
+| autoUpdate | Bool | default: false | Enable automatic updates |
+| autoUpdateInterval | Int | default: 24 | Update interval in hours |
+| lastUpdated | Date? | optional | Last successful update timestamp |
+| createdAt | Date | required | Creation timestamp |
+
+**Relationships**:
+- `nodes: [ProxyNode]` - One-to-many, cascade delete
+- `rules: [RoutingRule]` - One-to-many, cascade delete
+
+**State Transitions**:
+```
+[Created] → [Configured] → [Active]
+              ↓
+          [Updating] → [Configured]
+              ↓
+          [Error]
+```
+
+---
+
+### ProxyNode
+
+Represents a single proxy server endpoint within a profile.
+
+| Attribute | Type | Constraints | Description |
+|-----------|------|-------------|-------------|
+| id | UUID | PK, unique | Primary identifier |
+| name | String | required | User-facing display name |
+| serverAddress | String | required | Server hostname or IP |
+| port | Int | required, 1-65535 | Server port |
+| protocolType | ProxyProtocol | required | Protocol type enum |
+| credentials | Data? | optional | Encrypted protocol-specific credentials |
+| order | Int | default: 0 | Sort order within profile |
+| isEnabled | Bool | default: true | Include in configuration |
+| latency | Int? | optional | Last measured latency (ms) |
+
+**Relationships**:
+- `profile: Profile` - Many-to-one (inverse of Profile.nodes)
+
+**Protocol-Specific Credentials** (stored as encrypted JSON in `credentials`):
+
+| Protocol | Fields |
+|----------|--------|
+| Shadowsocks | method, password |
+| VMess | uuid, alterID, security |
+| VLESS | uuid, flow |
+| Trojan | password, sni |
+| Hysteria2 | password, obfs, obfsPassword |
+
+---
+
+### RoutingRule
+
+Represents a traffic routing rule within a profile.
+
+| Attribute | Type | Constraints | Description |
+|-----------|------|-------------|-------------|
+| id | UUID | PK, unique | Primary identifier |
+| name | String | required | User-facing rule name |
+| matchType | RuleMatchType | required | Type of match criteria |
+| matchValue | String | required | Value to match against |
+| action | RuleAction | required | Action when matched |
+| order | Int | default: 0 | Priority order (lower = higher priority) |
+| isEnabled | Bool | default: true | Rule is active |
+
+**Relationships**:
+- `profile: Profile` - Many-to-one (inverse of Profile.rules)
+
+**Match Types**:
+- `domain`: Exact domain match
+- `domain_suffix`: Domain ends with value
+- `domain_keyword`: Domain contains value
+- `ip_cidr`: IP address in CIDR range
+- `geoip`: GeoIP country code
+- `process_name`: Process name match
+
+**Actions**:
+- `proxy`: Route through proxy
+- `direct`: Direct connection (bypass proxy)
+- `reject`: Block connection
+
+---
+
+### CoreVersion
+
+Represents a cached Sing-Box core binary.
+
+| Attribute | Type | Constraints | Description |
+|-----------|------|-------------|-------------|
+| version | String | PK, unique | Semantic version string |
+| downloadURL | String | required | Source URL for download |
+| localPath | String? | optional | Local file path if downloaded |
+| downloadDate | Date? | optional | When downloaded |
+| isActive | Bool | default: false | Currently active version |
+| fileHash | String? | optional | SHA-256 hash for verification |
+
+**Constraints**:
+- Only one CoreVersion can have `isActive = true` at a time
+- `localPath` must be non-nil when `isActive = true`
+
+---
+
+## Enumerations
+
+### ProfileType
+
+```swift
+enum ProfileType: Int, Codable {
+    case local = 0   // User-created local profile
+    case remote = 1  // Imported from URL
+    case icloud = 2  // Synced via iCloud
+}
+```
+
+### ProxyProtocol
+
+```swift
+enum ProxyProtocol: String, Codable, CaseIterable {
+    case shadowsocks = "shadowsocks"
+    case vmess = "vmess"
+    case vless = "vless"
+    case trojan = "trojan"
+    case hysteria2 = "hysteria2"
+    case http = "http"
+    case socks5 = "socks5"
+}
+```
+
+### RuleMatchType
+
+```swift
+enum RuleMatchType: String, Codable, CaseIterable {
+    case domain = "domain"
+    case domainSuffix = "domain_suffix"
+    case domainKeyword = "domain_keyword"
+    case ipCIDR = "ip_cidr"
+    case geoIP = "geoip"
+    case process = "process_name"
+}
+```
+
+### RuleAction
+
+```swift
+enum RuleAction: String, Codable, CaseIterable {
+    case proxy = "proxy"
+    case direct = "direct"
+    case block = "reject"
+}
+```
+
+---
+
+## Validation Rules
+
+### Profile
+- `name`: 1-100 characters, non-empty
+- `remoteURL`: Valid URL if `type == .remote`
+- `autoUpdateInterval`: 1-168 (hours, max 1 week)
+
+### ProxyNode
+- `name`: 1-100 characters, non-empty
+- `serverAddress`: Valid hostname or IP
+- `port`: 1-65535
+
+### RoutingRule
+- `name`: 1-100 characters, non-empty
+- `matchValue`: Non-empty, format depends on `matchType`
+  - `domain`: Valid domain name
+  - `ip_cidr`: Valid CIDR notation
+  - `geoip`: 2-letter country code
+  - `process_name`: Valid process name
+
+---
+
+## SwiftData Implementation
+
+```swift
+import SwiftData
+
+@Model
+class Profile {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var order: Int
+    var type: ProfileType
+    var configurationJSON: String
+    var remoteURL: String?
+    var autoUpdate: Bool
+    var autoUpdateInterval: Int
+    var lastUpdated: Date?
+    var createdAt: Date
+    
+    @Relationship(deleteRule: .cascade, inverse: \ProxyNode.profile)
+    var nodes: [ProxyNode] = []
+    
+    @Relationship(deleteRule: .cascade, inverse: \RoutingRule.profile)
+    var rules: [RoutingRule] = []
+    
+    init(name: String, type: ProfileType = .local) {
+        self.id = UUID()
+        self.name = name
+        self.order = 0
+        self.type = type
+        self.configurationJSON = "{}"
+        self.autoUpdate = false
+        self.autoUpdateInterval = 24
+        self.createdAt = Date()
+    }
+}
+
+@Model
+class ProxyNode {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var serverAddress: String
+    var port: Int
+    var protocolType: ProxyProtocol
+    var credentials: Data?
+    var order: Int
+    var isEnabled: Bool
+    var latency: Int?
+    
+    var profile: Profile?
+    
+    init(name: String, serverAddress: String, port: Int, protocolType: ProxyProtocol) {
+        self.id = UUID()
+        self.name = name
+        self.serverAddress = serverAddress
+        self.port = port
+        self.protocolType = protocolType
+        self.order = 0
+        self.isEnabled = true
+    }
+}
+
+@Model
+class RoutingRule {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var matchType: RuleMatchType
+    var matchValue: String
+    var action: RuleAction
+    var order: Int
+    var isEnabled: Bool
+    
+    var profile: Profile?
+    
+    init(name: String, matchType: RuleMatchType, matchValue: String, action: RuleAction) {
+        self.id = UUID()
+        self.name = name
+        self.matchType = matchType
+        self.matchValue = matchValue
+        self.action = action
+        self.order = 0
+        self.isEnabled = true
+    }
+}
+
+@Model
+class CoreVersion {
+    @Attribute(.unique) var version: String
+    var downloadURL: String
+    var localPath: String?
+    var downloadDate: Date?
+    var isActive: Bool
+    var fileHash: String?
+    
+    init(version: String, downloadURL: String) {
+        self.version = version
+        self.downloadURL = downloadURL
+        self.isActive = false
+    }
+}
+```
+
+---
+
+## Query Patterns
+
+### Common Queries
+
+```swift
+// All profiles sorted by order
+@Query(sort: \Profile.order) var profiles: [Profile]
+
+// Active profile
+@Query(filter: #Predicate<Profile> { $0.isSelected }) var activeProfile: Profile?
+
+// Enabled nodes in a profile
+@Query(filter: #Predicate<ProxyNode> { $0.isEnabled && $0.profile?.id == selectedProfileId },
+       sort: \ProxyNode.order)
+var enabledNodes: [ProxyNode]
+
+// Rules sorted by priority
+@Query(filter: #Predicate<RoutingRule> { $0.profile?.id == selectedProfileId },
+       sort: \RoutingRule.order)
+var rules: [RoutingRule]
+
+// Active core version
+@Query(filter: #Predicate<CoreVersion> { $0.isActive }) var activeCore: CoreVersion?
+```
+
+---
+
+## Data Migration Notes
+
+When migrating from SFM (GRDB) or other data sources:
+
+1. Profile data maps directly
+2. Nodes extracted from `configurationJSON.outbounds`
+3. Rules extracted from `configurationJSON.route.rules`
+4. Core versions need re-download (no direct migration)

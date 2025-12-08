@@ -7,18 +7,15 @@
 
 import SwiftUI
 
+/// Root content view - redirects to MainView
+/// Kept for compatibility with default Xcode template structure
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
+        MainView()
     }
 }
 
 #Preview {
     ContentView()
+        .frame(width: 900, height: 600)
 }
