@@ -1,333 +1,706 @@
-# Quickstart: Sudo Proxy Refactor Implementation
+# Quickstart: Dual-Core Proxy Architecture Implementation
 
 **Feature**: 002-sudo-proxy-refactor
-**Date**: 2025-12-07
+**Date**: 2025-12-12 (Updated)
 
 ## Overview
 
-This guide provides step-by-step implementation instructions for refactoring SilentX's proxy architecture.
+This guide provides step-by-step implementation instructions for the dual-core proxy architecture, focusing on **NetworkExtensionEngine** implementation to eliminate password prompts.
 
 ---
 
-## Phase 1: Fix Current Implementation (Priority P1)
+## Current Status
 
-### Goal
-Make LocalProcessEngine reliable for HTTP/SOCKS proxy mode.
-
-### Step 1.1: Create ProxyEngine Protocol
-
-**File**: `SilentX/Services/Engines/ProxyEngine.swift`
-
-```swift
-import Combine
-import Foundation
-
-enum EngineType: String, Codable {
-    case localProcess
-    case networkExtension
-}
-
-enum ConnectionStatus: Equatable {
-    case disconnected
-    case connecting
-    case connected(ConnectionInfo)
-    case disconnecting
-    case error(ProxyError)
-}
-
-struct ConnectionInfo: Equatable {
-    let engineType: EngineType
-    let startTime: Date
-    let configName: String
-    let listenPorts: [Int]
-
-    var duration: TimeInterval {
-        Date().timeIntervalSince(startTime)
-    }
-}
-
-@MainActor
-protocol ProxyEngine: AnyObject {
-    var status: ConnectionStatus { get }
-    var statusPublisher: AnyPublisher<ConnectionStatus, Never> { get }
-    var engineType: EngineType { get }
-
-    func start(config: ProxyConfiguration) async throws
-    func stop() async throws
-    func validate(config: ProxyConfiguration) async -> [ProxyError]
-}
-```
-
-### Step 1.2: Create ProxyError Enum
-
-**File**: `SilentX/Services/Engines/ProxyError.swift`
-
-```swift
-enum ProxyError: Error, Equatable, LocalizedError {
-    case configInvalid(String)
-    case configNotFound
-    case coreNotFound
-    case coreStartFailed(String)
-    case portConflict([Int])
-    case permissionDenied
-    case extensionNotApproved
-    case timeout
-    case unknown(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .configInvalid(let detail): return "配置文件错误: \(detail)"
-        case .configNotFound: return "未找到配置文件"
-        case .coreNotFound: return "未找到 sing-box 核心"
-        case .coreStartFailed(let detail): return "核心启动失败: \(detail)"
-        case .portConflict(let ports): return "端口被占用: \(ports.map(String.init).joined(separator: ", "))"
-        case .permissionDenied: return "权限不足"
-        case .extensionNotApproved: return "请在系统设置中允许系统扩展"
-        case .timeout: return "操作超时"
-        case .unknown(let detail): return "未知错误: \(detail)"
-        }
-    }
-}
-```
-
-### Step 1.3: Implement LocalProcessEngine
-
-**File**: `SilentX/Services/Engines/LocalProcessEngine.swift`
-
-Key improvements over current ConnectionService:
-
-1. **Better process monitoring**: Check process.isRunning more frequently
-2. **Improved error capture**: Parse stderr for specific error messages
-3. **Port validation before start**: Fail fast if ports are in use
-4. **Graceful shutdown**: SIGTERM → wait → SIGKILL if needed
-
-```swift
-@MainActor
-final class LocalProcessEngine: ProxyEngine {
-    // Implementation details in contracts/proxy-engine.md
-}
-```
-
-### Step 1.4: Refactor ConnectionService
-
-Modify `ConnectionService.swift` to use `ProxyEngine` protocol:
-
-```swift
-@MainActor
-class ConnectionService: ObservableObject {
-    @Published private(set) var status: ConnectionStatus = .disconnected
-    private var engine: ProxyEngine?
-
-    func connect(profile: Profile, engineType: EngineType = .localProcess) async throws {
-        // Create appropriate engine
-        engine = engineType == .localProcess
-            ? LocalProcessEngine()
-            : nil // NetworkExtensionEngine added in Phase 2
-
-        guard let engine else {
-            throw ProxyError.unknown("Engine not available")
-        }
-
-        // Subscribe to status changes
-        engine.statusPublisher
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$status)
-
-        // Build config and start
-        let config = try buildConfiguration(from: profile)
-        try await engine.start(config: config)
-    }
-
-    func disconnect() async throws {
-        try await engine?.stop()
-        engine = nil
-    }
-}
-```
-
-### Step 1.5: Debug Current Startup Issue
-
-The "Core process exited during startup" error. Debug checklist:
-
-1. **Check sing-box binary**:
-   ```bash
-   file /path/to/sing-box  # Should show Mach-O executable
-   xattr -l /path/to/sing-box  # Remove quarantine if present
-   ```
-
-2. **Test config manually**:
-   ```bash
-   /path/to/sing-box check -c /path/to/config.json
-   /path/to/sing-box run -c /path/to/config.json
-   ```
-
-3. **Add detailed logging in engine**:
-   - Log exact command being run
-   - Log stderr output on failure
-   - Log exit code
-
-4. **Common issues**:
-   - TUN mode in config requires root → remove TUN inbound for now
-   - Invalid outbound credentials
-   - DNS configuration errors
+| Component | Status | Notes |
+|-----------|--------|-------|
+| ProxyEngine Protocol | ✅ Complete | `SilentX/Services/Engines/ProxyEngine.swift` |
+| LocalProcessEngine | ✅ Complete | Works but requires password on each operation |
+| ConnectionService | ✅ Complete | Supports engine switching |
+| NetworkExtensionEngine | 🔴 Not Started | **This implementation** |
+| System Extension Target | 🔴 Not Started | **This implementation** |
 
 ---
 
-## Phase 2: Add Network Extension (Priority P2)
+## Implementation Steps
 
-### Goal
-Enable TUN mode via System Extension.
+### Step 1: Create System Extension Target
 
-### Step 2.1: Create System Extension Target
+**In Xcode**:
 
-1. In Xcode: File → New → Target → System Extension
-2. Name: `SilentX.System`
-3. Type: Network Extension
+1. File → New → Target
+2. Select "System Extension"
+3. Product Name: `SilentX.System`
+4. Bundle Identifier: `Silent-Net.SilentX.System`
 
-### Step 2.2: Configure Entitlements
+**Create directory structure**:
+```
+SilentX.System/
+├── Info.plist
+├── main.swift
+├── PacketTunnelProvider.swift
+├── ExtensionPlatformInterface.swift
+└── SilentX.System.entitlements
+```
 
-**SilentX/SilentX.entitlements** (Main App):
+### Step 2: Configure Info.plist for System Extension
+
+**File**: `SilentX.System/Info.plist`
+
 ```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>NSSystemExtensionUsageDescription</key>
+    <string>SilentX needs a system extension to provide VPN functionality.</string>
+    <key>NetworkExtension</key>
+    <dict>
+        <key>NEMachServiceName</key>
+        <string>group.Silent-Net.SilentX.system</string>
+        <key>NEProviderClasses</key>
+        <dict>
+            <key>com.apple.networkextension.packet-tunnel</key>
+            <string>$(PRODUCT_MODULE_NAME).PacketTunnelProvider</string>
+        </dict>
+    </dict>
+</dict>
+</plist>
+```
+
+### Step 3: Configure Entitlements
+
+**File**: `SilentX.System/SilentX.System.entitlements`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.developer.networking.networkextension</key>
+    <array>
+        <string>packet-tunnel-provider-systemextension</string>
+    </array>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.Silent-Net.SilentX</string>
+    </array>
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+</dict>
+</plist>
+```
+
+**Update Main App**: `SilentX/SilentX.entitlements`
+
+```xml
+<!-- Add these keys -->
 <key>com.apple.developer.networking.networkextension</key>
 <array>
     <string>packet-tunnel-provider</string>
 </array>
 <key>com.apple.security.application-groups</key>
 <array>
-    <string>group.your.bundle.id</string>
+    <string>group.Silent-Net.SilentX</string>
 </array>
 ```
 
-**SilentX.System/SilentX.System.entitlements**:
-```xml
-<key>com.apple.developer.networking.networkextension</key>
-<array>
-    <string>packet-tunnel-provider-systemextension</string>
-</array>
+### Step 4: Integrate Libbox Framework
+
+**Option A: Download Prebuilt**
+```bash
+# Download from sing-box releases
+curl -L -o Libbox.xcframework.zip https://github.com/SagerNet/sing-box/releases/download/v1.x.x/Libbox-apple-*.xcframework.zip
+unzip Libbox.xcframework.zip -d Frameworks/
 ```
 
-### Step 2.3: Implement PacketTunnelProvider
+**Option B: Build from Source**
+```bash
+cd /path/to/sing-box
+make build_local_for_apple
+cp -r build/Libbox.xcframework /path/to/SilentX/Frameworks/
+```
+
+**In Xcode**:
+1. Drag `Libbox.xcframework` to project
+2. Add to both targets: SilentX and SilentX.System
+3. Embed & Sign for SilentX, Do Not Embed for SilentX.System
+
+### Step 5: Implement System Extension Entry Point
+
+**File**: `SilentX.System/main.swift`
+
+```swift
+import Foundation
+import NetworkExtension
+
+autoreleasepool {
+    NEProvider.startSystemExtensionMode()
+}
+dispatchMain()
+```
+
+### Step 6: Implement PacketTunnelProvider
 
 **File**: `SilentX.System/PacketTunnelProvider.swift`
 
 ```swift
+import Foundation
+import Libbox
 import NetworkExtension
-import Libbox  // sing-box Go library
+import OSLog
 
 class PacketTunnelProvider: NEPacketTunnelProvider {
-    private var service: LibboxBoxService?
-
+    private let logger = Logger(subsystem: "Silent-Net.SilentX.System", category: "PacketTunnel")
+    private var commandServer: LibboxCommandServer?
+    private var platformInterface: ExtensionPlatformInterface?
+    private var username: String?
+    
     override func startTunnel(options: [String: NSObject]?) async throws {
+        logger.info("Starting tunnel...")
+        
+        // Extract username for path resolution
+        guard let usernameObj = options?["username"] as? NSString else {
+            throw NSError(domain: "PacketTunnel", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Missing username in options"
+            ])
+        }
+        username = String(usernameObj)
+        
+        // Setup paths
+        let groupContainer = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.Silent-Net.SilentX"
+        )!
+        let basePath = groupContainer.path
+        let workingPath = groupContainer.appendingPathComponent("Working").path
+        let tempPath = groupContainer.appendingPathComponent("Cache").path
+        
+        // Create directories
+        try? FileManager.default.createDirectory(atPath: workingPath, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(atPath: tempPath, withIntermediateDirectories: true)
+        
+        // Setup Libbox
+        let setupOptions = LibboxSetupOptions()
+        setupOptions.basePath = basePath
+        setupOptions.workingPath = workingPath
+        setupOptions.tempPath = tempPath
+        setupOptions.logMaxLines = 3000
+        
+        var setupError: NSError?
+        LibboxSetup(setupOptions, &setupError)
+        if let error = setupError {
+            throw error
+        }
+        
+        // Create platform interface
+        platformInterface = ExtensionPlatformInterface(self)
+        
+        // Create command server
+        var serverError: NSError?
+        commandServer = LibboxNewCommandServer(platformInterface, platformInterface, &serverError)
+        if let error = serverError {
+            throw error
+        }
+        
+        try commandServer?.start()
+        
         // Read config from shared container
-        let configPath = sharedContainerURL.appendingPathComponent("active-config.json")
-        let configContent = try String(contentsOf: configPath)
-
-        // Start sing-box
-        service = LibboxNewService(configContent, self)
-        try service?.start()
+        let configPath = groupContainer.appendingPathComponent("active-config.json")
+        let configContent = try String(contentsOf: configPath, encoding: .utf8)
+        
+        // Start service
+        let overrideOptions = LibboxOverrideOptions()
+        try commandServer?.startOrReloadService(configContent, options: overrideOptions)
+        
+        logger.info("Tunnel started successfully")
     }
-
+    
     override func stopTunnel(with reason: NEProviderStopReason) async {
-        try? service?.close()
-        service = nil
+        logger.info("Stopping tunnel, reason: \(reason.rawValue)")
+        
+        try? commandServer?.closeService()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        commandServer?.close()
+        commandServer = nil
+        platformInterface?.reset()
+        platformInterface = nil
+        
+        logger.info("Tunnel stopped")
+    }
+    
+    override func handleAppMessage(_ messageData: Data) async -> Data? {
+        // Handle IPC from main app
+        messageData
+    }
+    
+    override func sleep() async {
+        commandServer?.pause()
+    }
+    
+    override func wake() {
+        commandServer?.wake()
     }
 }
 ```
 
-### Step 2.4: Implement NetworkExtensionEngine
+### Step 7: Implement ExtensionPlatformInterface
+
+**File**: `SilentX.System/ExtensionPlatformInterface.swift`
+
+```swift
+import Foundation
+import Libbox
+import NetworkExtension
+
+class ExtensionPlatformInterface: NSObject {
+    private weak var provider: NEPacketTunnelProvider?
+    private var packetFlow: NEPacketTunnelFlow?
+    
+    init(_ provider: NEPacketTunnelProvider) {
+        self.provider = provider
+        super.init()
+    }
+    
+    func reset() {
+        packetFlow = nil
+    }
+}
+
+// MARK: - LibboxPlatformInterface
+extension ExtensionPlatformInterface: LibboxPlatformInterfaceProtocol {
+    
+    func autoDetectInterfaceControl(_ fd: Int32) throws {
+        // Not needed for macOS
+    }
+    
+    func openTun(_ options: LibboxTunOptions?) throws -> LibboxTunInterface {
+        guard let provider = provider else {
+            throw NSError(domain: "Platform", code: 1, userInfo: nil)
+        }
+        
+        // Configure tunnel settings
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
+        
+        // IPv4
+        settings.ipv4Settings = NEIPv4Settings(
+            addresses: [options?.inet4Address ?? "172.19.0.1"],
+            subnetMasks: ["255.255.255.0"]
+        )
+        settings.ipv4Settings?.includedRoutes = [NEIPv4Route.default()]
+        
+        // IPv6
+        if let inet6 = options?.inet6Address, !inet6.isEmpty {
+            settings.ipv6Settings = NEIPv6Settings(
+                addresses: [inet6],
+                networkPrefixLengths: [128]
+            )
+            settings.ipv6Settings?.includedRoutes = [NEIPv6Route.default()]
+        }
+        
+        // DNS
+        settings.dnsSettings = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
+        
+        // MTU
+        settings.mtu = NSNumber(value: options?.mtu ?? 9000)
+        
+        // Apply settings
+        let semaphore = DispatchSemaphore(value: 0)
+        var setError: Error?
+        
+        provider.setTunnelNetworkSettings(settings) { error in
+            setError = error
+            semaphore.signal()
+        }
+        semaphore.wait()
+        
+        if let error = setError {
+            throw error
+        }
+        
+        packetFlow = provider.packetFlow
+        return TunInterface(flow: provider.packetFlow)
+    }
+    
+    func useProcFS() -> Bool { false }
+    func findConnectionOwner(_ ipProtocol: Int32, sourceAddress: String?, sourcePort: Int32, destinationAddress: String?, destinationPort: Int32) throws -> Int32 { -1 }
+    func packageNameByUid(_ uid: Int32) throws -> String { "" }
+    func uidByPackageName(_ packageName: String?) throws -> Int32 { -1 }
+    func usePlatformAutoDetectInterfaceControl() -> Bool { false }
+    func usePlatformDefaultInterfaceMonitor() -> Bool { false }
+    func usePlatformInterfaceGetter() -> Bool { false }
+    func getInterfaces() throws -> LibboxNetworkInterfaceIteratorProtocol { EmptyIterator() }
+    func underNetworkExtension() -> Bool { true }
+    func includeAllNetworks() -> Bool { false }
+    func clearDNSCache() {}
+    func readWIFIState() throws -> LibboxWIFIState { LibboxWIFIState() }
+}
+
+// MARK: - LibboxCommandServerHandler
+extension ExtensionPlatformInterface: LibboxCommandServerHandlerProtocol {
+    func serviceReload() throws {
+        // Handle reload
+    }
+    
+    func getSystemProxyStatus() throws -> LibboxSystemProxyStatus {
+        LibboxSystemProxyStatus()
+    }
+    
+    func setSystemProxyEnabled(_ enabled: Bool) throws {
+        // Handle system proxy toggle
+    }
+    
+    func postServiceClose() {
+        // Cleanup after service close
+    }
+    
+    func writeMessage(_ level: Int32, message: String?) {
+        guard let message = message else { return }
+        NSLog("[Libbox L\(level)] \(message)")
+    }
+    
+    func writeGroups(_ message: LibboxOutboundGroupIteratorProtocol?) {
+        // Handle group updates
+    }
+    
+    func writeNetwork(_ message: LibboxNetworkStatusProtocol?) {
+        // Handle network status updates
+    }
+}
+
+// MARK: - Helper Classes
+private class TunInterface: NSObject, LibboxTunInterfaceProtocol {
+    private let flow: NEPacketTunnelFlow
+    
+    init(flow: NEPacketTunnelFlow) {
+        self.flow = flow
+        super.init()
+    }
+    
+    func read(_ p0: Data?) throws -> Int {
+        // Read packets
+        return 0
+    }
+    
+    func write(_ p0: Data?) throws -> Int {
+        // Write packets
+        return p0?.count ?? 0
+    }
+    
+    func close() throws {
+        // Close
+    }
+    
+    func fd() -> Int32 { -1 }
+}
+
+private class EmptyIterator: NSObject, LibboxNetworkInterfaceIteratorProtocol {
+    func hasNext() -> Bool { false }
+    func next() -> LibboxNetworkInterface? { nil }
+}
+```
+
+### Step 8: Implement Main App Components
+
+**File**: `SilentX/Services/Engines/SystemExtension.swift`
+
+```swift
+#if os(macOS)
+import Foundation
+import SystemExtensions
+
+public class SystemExtension: NSObject, OSSystemExtensionRequestDelegate {
+    private let forceUpdate: Bool
+    private let inBackground: Bool
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var result: OSSystemExtensionRequest.Result?
+    private var properties: [OSSystemExtensionProperties]?
+    private var error: Error?
+    
+    private init(_ forceUpdate: Bool = false, _ inBackground: Bool = false) {
+        self.forceUpdate = forceUpdate
+        self.inBackground = inBackground
+    }
+    
+    // ... (implementation from contracts/system-extension.md)
+    
+    public static func isInstalled() async -> Bool {
+        await (try? Task {
+            try await isInstalledBackground()
+        }.result.get()) == true
+    }
+    
+    public static func install(forceUpdate: Bool = false, inBackground: Bool = false) async throws -> OSSystemExtensionRequest.Result? {
+        try await Task.detached {
+            try SystemExtension(forceUpdate, inBackground).activation()
+        }.result.get()
+    }
+}
+#endif
+```
+
+**File**: `SilentX/Services/Engines/ExtensionProfile.swift`
+
+```swift
+import Foundation
+import NetworkExtension
+import Combine
+
+public class ExtensionProfile: ObservableObject {
+    private let manager: NEVPNManager
+    
+    @Published public var status: NEVPNStatus
+    @Published public var connectedDate: Date?
+    
+    private var observer: Any?
+    
+    public init(_ manager: NEVPNManager) {
+        self.manager = manager
+        self.status = manager.connection.status
+        self.connectedDate = manager.connection.connectedDate
+    }
+    
+    public func register() {
+        observer = NotificationCenter.default.addObserver(
+            forName: .NEVPNStatusDidChange,
+            object: manager.connection,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            self.status = (notification.object as? NEVPNConnection)?.status ?? .invalid
+            self.connectedDate = (notification.object as? NEVPNConnection)?.connectedDate
+        }
+    }
+    
+    public func start() async throws {
+        manager.isEnabled = true
+        try await manager.saveToPreferences()
+        try manager.connection.startVPNTunnel(options: [
+            "username": NSString(string: NSUserName())
+        ])
+    }
+    
+    public func stop() async throws {
+        manager.connection.stopVPNTunnel()
+    }
+    
+    public static func load() async throws -> ExtensionProfile? {
+        let managers = try await NETunnelProviderManager.loadAllFromPreferences()
+        guard let first = managers.first else { return nil }
+        return ExtensionProfile(first)
+    }
+    
+    public static func install() async throws {
+        let manager = NETunnelProviderManager()
+        manager.localizedDescription = "SilentX"
+        
+        let tunnelProtocol = NETunnelProviderProtocol()
+        tunnelProtocol.providerBundleIdentifier = "Silent-Net.SilentX.System"
+        tunnelProtocol.serverAddress = "sing-box"
+        
+        manager.protocolConfiguration = tunnelProtocol
+        manager.isEnabled = true
+        
+        try await manager.saveToPreferences()
+    }
+}
+```
 
 **File**: `SilentX/Services/Engines/NetworkExtensionEngine.swift`
 
 ```swift
+import Foundation
+import Combine
+import NetworkExtension
+
 @MainActor
 final class NetworkExtensionEngine: ProxyEngine {
-    private var manager: NETunnelProviderManager?
-
+    
+    private let statusSubject = CurrentValueSubject<ConnectionStatus, Never>(.disconnected)
+    private var profile: ExtensionProfile?
+    private var statusObserver: AnyCancellable?
+    
+    var status: ConnectionStatus { statusSubject.value }
+    var statusPublisher: AnyPublisher<ConnectionStatus, Never> { statusSubject.eraseToAnyPublisher() }
+    let engineType: EngineType = .networkExtension
+    
     func start(config: ProxyConfiguration) async throws {
-        // Write config to shared container for extension to read
-        try writeConfigToSharedContainer(config)
-
-        // Load or create manager
-        manager = try await loadOrCreateManager()
-
+        guard status == .disconnected else {
+            throw ProxyError.unknown("Already connected")
+        }
+        
+        statusSubject.send(.connecting)
+        
+        // Check system extension
+        guard await SystemExtension.isInstalled() else {
+            statusSubject.send(.error(.extensionNotInstalled))
+            throw ProxyError.extensionNotInstalled
+        }
+        
+        // Write config to shared container
+        let groupContainer = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.Silent-Net.SilentX"
+        )!
+        let configDest = groupContainer.appendingPathComponent("active-config.json")
+        let configContent = try String(contentsOf: config.configPath, encoding: .utf8)
+        try configContent.write(to: configDest, atomically: true, encoding: .utf8)
+        
+        // Load or install profile
+        profile = try await ExtensionProfile.load()
+        if profile == nil {
+            try await ExtensionProfile.install()
+            profile = try await ExtensionProfile.load()
+        }
+        
+        guard let profile else {
+            throw ProxyError.extensionLoadFailed("Cannot load VPN profile")
+        }
+        
+        // Observe status
+        profile.register()
+        statusObserver = profile.$status
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] neStatus in
+                self?.handleNEStatusChange(neStatus)
+            }
+        
         // Start tunnel
-        try manager?.connection.startVPNTunnel()
+        try await profile.start()
     }
-
+    
     func stop() async throws {
-        manager?.connection.stopVPNTunnel()
+        statusSubject.send(.disconnecting)
+        statusObserver?.cancel()
+        try await profile?.stop()
+        profile = nil
+        statusSubject.send(.disconnected)
+    }
+    
+    func validate(config: ProxyConfiguration) async -> [ProxyError] {
+        var errors: [ProxyError] = []
+        
+        if !await SystemExtension.isInstalled() {
+            errors.append(.extensionNotInstalled)
+        }
+        
+        if !FileManager.default.fileExists(atPath: config.configPath.path) {
+            errors.append(.configNotFound)
+        }
+        
+        return errors
+    }
+    
+    private func handleNEStatusChange(_ neStatus: NEVPNStatus) {
+        switch neStatus {
+        case .connected:
+            statusSubject.send(.connected(ConnectionInfo(
+                engineType: .networkExtension,
+                startTime: profile?.connectedDate ?? Date(),
+                configName: "Active Profile",
+                listenPorts: []
+            )))
+        case .connecting, .reasserting:
+            statusSubject.send(.connecting)
+        case .disconnecting:
+            statusSubject.send(.disconnecting)
+        case .disconnected, .invalid:
+            statusSubject.send(.disconnected)
+        @unknown default:
+            break
+        }
     }
 }
 ```
 
----
+### Step 9: Update ProxyError
 
-## Testing Strategy
+**File**: `SilentX/Services/Engines/ProxyError.swift`
 
-### Unit Tests
-
+Add new cases:
 ```swift
-// Test LocalProcessEngine
-class LocalProcessEngineTests: XCTestCase {
-    func testStartWithValidConfig() async throws
-    func testStartWithInvalidConfigThrows() async throws
-    func testStopWhileConnected() async throws
-    func testProcessCrashUpdatesStatus() async throws
-}
-
-// Test ProxyEngine protocol conformance
-class ProxyEngineContractTests: XCTestCase {
-    func testAllEnginesConformToProtocol()
-}
+case extensionNotInstalled
+case extensionLoadFailed(String)
+case tunnelStartFailed(String)
 ```
 
-### Integration Tests
+### Step 10: Update ConnectionService
+
+Update to support NetworkExtensionEngine:
 
 ```swift
-// Test actual sing-box launch (requires binary)
-class SingBoxIntegrationTests: XCTestCase {
-    func testLaunchWithHTTPProxy() async throws
-    func testLaunchWithSOCKSProxy() async throws
-    func testGracefulShutdown() async throws
+func connect(profile: Profile) async throws {
+    let engine: any ProxyEngine
+    switch profile.preferredEngine {
+    case .localProcess:
+        engine = LocalProcessEngine()
+    case .networkExtension:
+        engine = NetworkExtensionEngine()  // Now implemented!
+    }
+    // ... rest of connection logic
 }
 ```
 
 ---
 
-## File Checklist
+## Testing Checklist
 
-### Phase 1 Files
+### System Extension
 
-- [ ] `SilentX/Services/Engines/ProxyEngine.swift` - Protocol
-- [ ] `SilentX/Services/Engines/ProxyError.swift` - Error types
-- [ ] `SilentX/Services/Engines/ProxyConfiguration.swift` - Config model
-- [ ] `SilentX/Services/Engines/LocalProcessEngine.swift` - Implementation
-- [ ] `SilentX/Services/ConnectionService.swift` - Refactored
-- [ ] `SilentXTests/EngineTests/LocalProcessEngineTests.swift` - Tests
-- [ ] `SilentXTests/EngineTests/MockProxyEngine.swift` - Mock for UI tests
+- [ ] Extension builds successfully
+- [ ] Extension installs via System Preferences approval
+- [ ] `SystemExtension.isInstalled()` returns true after approval
+- [ ] Extension uninstalls correctly
 
-### Phase 2 Files
+### VPN Profile
 
-- [ ] `SilentX.System/` - System Extension target
-- [ ] `SilentX.System/PacketTunnelProvider.swift` - Tunnel provider
-- [ ] `SilentX/Services/Engines/NetworkExtensionEngine.swift` - NE implementation
-- [ ] Updated entitlements for both targets
-- [ ] Libbox framework integration
+- [ ] VPN profile appears in System Preferences → Network
+- [ ] Profile starts tunnel without password prompt
+- [ ] Profile stops tunnel correctly
+
+### Full Flow
+
+- [ ] User clicks Connect → tunnel starts (no password)
+- [ ] User clicks Disconnect → tunnel stops (no password)
+- [ ] Status updates correctly in UI
+- [ ] Config changes apply on next connect
 
 ---
 
-## Success Verification
+## Build Commands
 
-### Phase 1 Complete When
+```bash
+# Build all targets
+xcodebuild -scheme SilentX -configuration Debug -destination 'platform=macOS' build
 
-1. [ ] User can click Connect and proxy starts (HTTP/SOCKS mode)
-2. [ ] Process crash is detected and UI updates within 2 seconds
-3. [ ] Clear error messages shown for common failure cases
-4. [ ] Tests pass for LocalProcessEngine
+# Sign for testing (development)
+codesign --force --deep --sign "Apple Development" SilentX.app
+codesign --force --deep --sign "Apple Development" SilentX.app/Contents/Library/SystemExtensions/SilentX.System.systemextension
+```
 
-### Phase 2 Complete When
+---
 
-1. [ ] System Extension installs and gets user approval
-2. [ ] TUN mode works (all traffic routed through proxy)
-3. [ ] No password prompt after initial approval
-4. [ ] Tests pass for NetworkExtensionEngine
+## Troubleshooting
+
+### Extension Not Installing
+
+1. Check Console.app for `sysextd` logs
+2. Verify entitlements match between Info.plist and .entitlements
+3. Ensure app is in /Applications (not ~/Applications)
+
+### Tunnel Not Starting
+
+1. Check Console.app for PacketTunnel logs
+2. Verify config is written to shared container
+3. Check Libbox initialization errors
+
+### Status Not Updating
+
+1. Verify `NEVPNStatusDidChange` observer is registered
+2. Check that profile is retained during connection
+3. Verify main actor dispatch for UI updates

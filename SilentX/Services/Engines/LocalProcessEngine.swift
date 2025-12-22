@@ -37,6 +37,7 @@ final class LocalProcessEngine: ProxyEngine {
     private var activeTunInterfaces: [String] = []
     private let privilegedPidFile = URL(fileURLWithPath: "/tmp/singbox-privileged.pid")
     private let privilegedDiagFile = URL(fileURLWithPath: "/tmp/singbox-diag.log")
+    private let privilegedStopFile = URL(fileURLWithPath: "/tmp/singbox-stop.flag")
     private let configurationService: any ConfigurationServiceProtocol
     private let coreVersionService: any CoreVersionServiceProtocol
 
@@ -82,7 +83,31 @@ final class LocalProcessEngine: ProxyEngine {
             logger.debug("Extracted ports: \(ports) tunInterfaces: \(tunInterfaces)")
             activeTunInterfaces = tunInterfaces
             cleanupStaleCacheDB(configPath: config.configPath)
-            // Note: Stale process cleanup now handled inside privileged script
+
+            // === 强制彻底释放所有配置中指定的utun接口 ===
+            if !tunInterfaces.isEmpty {
+                for utun in tunInterfaces {
+                    logger.info("[TUN FORCE RELEASE] Checking if utun interface \(utun) is present before launch...")
+                    if isInterfacePresent(utun) {
+                        logger.warning("[TUN FORCE RELEASE] utun interface \(utun) is present, attempting to kill ALL occupying processes (not just sing-box)...")
+                        try await forceKillAllProcessesOccupyingUtun(utun)
+                        // 等待接口释放
+                        let maxWait = Date().addingTimeInterval(5.0)
+                        while isInterfacePresent(utun) && Date() < maxWait {
+                            logger.info("[TUN FORCE RELEASE] Waiting for utun interface \(utun) to be released...")
+                            try await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+                        }
+                        if isInterfacePresent(utun) {
+                            logger.error("[TUN FORCE RELEASE] utun interface \(utun) still present after force cleanup, aborting startup!")
+                            throw ProxyError.coreStartFailed("utun接口 \(utun) 被其他进程占用，无法释放 (已尝试强制kill)")
+                        } else {
+                            logger.info("[TUN FORCE RELEASE] utun interface \(utun) released successfully.")
+                        }
+                    } else {
+                        logger.info("[TUN FORCE RELEASE] utun interface \(utun) not present, no cleanup needed.")
+                    }
+                }
+            }
 
             // 4. Prepare sing-box binary for execution
             logger.debug("Preparing core binary at: \(config.corePath.path)")
@@ -104,6 +129,24 @@ final class LocalProcessEngine: ProxyEngine {
             // 6. Wait for core to be ready (check port availability)
             logger.debug("Waiting for core to be ready (timeout: 30s)...")
             try await waitForCoreReady(ports: ports, timeout: 30.0)
+
+            // 7. 启动后检测TUN是否up和路由生效
+            if !tunInterfaces.isEmpty {
+                for utun in tunInterfaces {
+                    let up = isInterfacePresent(utun)
+                    logger.info("[TUN CHECK] utun \(utun) present after start: \(up)")
+                    if !up {
+                        throw ProxyError.coreStartFailed("TUN接口 \(utun) 启动后未检测到，TUN未生效")
+                    }
+                    // 检查路由表是否有utun
+                    if !isDefaultRouteViaUtun(utun) {
+                        logger.warning("[TUN CHECK] 默认路由未指向 \(utun)，TUN未生效")
+                        // 这里不直接报错，提示即可
+                    } else {
+                        logger.info("[TUN CHECK] 默认路由已指向 \(utun)，TUN生效")
+                    }
+                }
+            }
 
             // 7. Update status to connected
             let info = ConnectionInfo(
@@ -127,6 +170,114 @@ final class LocalProcessEngine: ProxyEngine {
             cleanup()
             throw proxyError
         }
+    }
+
+    /// 强制kill所有占用指定utun接口的进程（不管是不是sing-box）
+    private func forceKillAllProcessesOccupyingUtun(_ utun: String) async throws {
+        logger.info("[TUN FORCE RELEASE] lsof -n | grep \(utun)")
+        let shellCmd = "lsof -n | grep \(utun)"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", shellCmd]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        try? process.run()
+        process.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8) ?? ""
+        let lines = output.split(separator: "\n")
+        var killedPids = Set<Int32>()
+        for line in lines {
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            if parts.count > 1, let pid = Int32(parts[1]) {
+                if killedPids.contains(pid) { continue }
+                logger.warning("[TUN FORCE RELEASE] Killing process PID=\(pid) occupying utun \(utun)...")
+                let result = kill(pid, SIGKILL)
+                if result == 0 {
+                    logger.info("[TUN FORCE RELEASE] Sent SIGKILL to PID=\(pid)")
+                } else {
+                    logger.warning("[TUN FORCE RELEASE] Failed to SIGKILL PID=\(pid), errno=\(errno)")
+                }
+                killedPids.insert(pid)
+            }
+        }
+        // 保险起见，再killall sing-box
+        let killall = Process()
+        killall.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        killall.arguments = ["killall", "-KILL", "sing-box"]
+        killall.standardOutput = FileHandle.nullDevice
+        killall.standardError = FileHandle.nullDevice
+        try? killall.run()
+        killall.waitUntilExit()
+        logger.info("[TUN FORCE RELEASE] killall -KILL sing-box issued for utun cleanup.")
+    }
+
+    /// 检查默认路由是否指向utun（TUN生效检测）
+    private func isDefaultRouteViaUtun(_ utun: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/sbin/route")
+        process.arguments = ["-n", "get", "default"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        try? process.run()
+        process.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8) ?? ""
+        for rawLine in output.split(separator: "\n") {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("interface:") && line.contains(utun) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// 杀掉所有占用指定utun接口的进程（需要sudo权限）
+    private func killProcessesOccupyingUtun(_ utun: String) async throws {
+        logger.info("Finding processes occupying utun: \(utun)")
+        // 1. 用lsof查找所有占用该utun的进程
+        let lsofCmd = "/usr/sbin/lsof"
+        let args = ["-n", "|", "/usr/bin/grep", utun]
+        // 由于lsof -n | grep utun005 不能直接用Process拼接管道，这里用shell
+        let shellCmd = "lsof -n | grep \(utun)"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", shellCmd]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        try? process.run()
+        process.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8) ?? ""
+        let lines = output.split(separator: "\n")
+        var killedPids = Set<Int32>()
+        for line in lines {
+            // lsof输出格式: COMMAND   PID ...
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            if parts.count > 1, let pid = Int32(parts[1]) {
+                if killedPids.contains(pid) { continue }
+                logger.warning("Killing process PID=\(pid) occupying utun \(utun)...")
+                let result = kill(pid, SIGTERM)
+                if result == 0 {
+                    logger.info("Sent SIGTERM to PID=\(pid)")
+                } else {
+                    logger.warning("Failed to SIGTERM PID=\(pid), errno=\(errno)")
+                }
+                killedPids.insert(pid)
+            }
+        }
+        // 2. 保险起见，再killall sing-box
+        let killall = Process()
+        killall.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        killall.arguments = ["killall", "-TERM", "sing-box"]
+        killall.standardOutput = FileHandle.nullDevice
+        killall.standardError = FileHandle.nullDevice
+        try? killall.run()
+        killall.waitUntilExit()
+        logger.info("killall sing-box issued for utun cleanup.")
     }
 
     func stop() async throws {
@@ -312,9 +463,11 @@ final class LocalProcessEngine: ProxyEngine {
         let logFile = URL(fileURLWithPath: "/tmp/singbox-privileged.log")
         let pidFile = privilegedPidFile
         let diagFile = privilegedDiagFile
+        let stopFile = privilegedStopFile
         try? FileManager.default.removeItem(at: logFile)
         try? FileManager.default.removeItem(at: pidFile)
         try? FileManager.default.removeItem(at: diagFile)
+        try? FileManager.default.removeItem(at: stopFile)
 
         func shellEscape(_ path: String) -> String {
             "'" + path.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
@@ -326,16 +479,19 @@ final class LocalProcessEngine: ProxyEngine {
         let diagArg = shellEscape(diagFile.path)
         let workdirArg = shellEscape(configPath.deletingLastPathComponent().path)
         let pidArg = shellEscape(pidFile.path)
+        let stopArg = shellEscape(stopFile.path)
 
         // TUN cleanup is now handled by killing sing-box processes
         let tunCleanup = ""
 
-        // Enhanced diagnostic script with cleanup embedded
+        // Enhanced launch script with STOP FILE MONITORING
+        // The wrapper monitors a stop file - when it appears, it kills sing-box
+        // This allows passwordless stop: just create the stop file!
         let launchScriptURL = URL(fileURLWithPath: "/tmp/singbox-launch.sh")
         let scriptContents = """
         #!/bin/sh
-        # Clean up log files first (must be done with root privilege since they're root-owned)
-        rm -f \(logArg) \(pidArg) \(diagArg)
+        # Clean up files first (must be done with root privilege since they're root-owned)
+        rm -f \(logArg) \(pidArg) \(diagArg) \(stopArg)
         exec > \(diagArg) 2>&1
         set -x
         echo "=== Sing-Box Diagnostic ==="
@@ -372,8 +528,41 @@ final class LocalProcessEngine: ProxyEngine {
         
         cd \(workdirArg) || { echo "ERROR: Cannot cd"; exit 1; }
         \(tunCleanup)
-        echo "=== Launching ==="
-        ( \(coreArg) run -c \(configArg) </dev/null >> \(logArg) 2>&1 & pid=$!; echo $pid > \(pidArg); echo "PID: $pid"; echo $pid )
+        echo "=== Launching with Stop-File Monitor ==="
+        
+        # Start sing-box in background
+        \(coreArg) run -c \(configArg) </dev/null >> \(logArg) 2>&1 &
+        SINGBOX_PID=$!
+        echo $SINGBOX_PID > \(pidArg)
+        echo "PID: $SINGBOX_PID"
+        
+        # Make stop file world-writable location known
+        # The wrapper stays running and monitors for stop file
+        (
+            while true; do
+                sleep 1
+                # Check if stop file exists (created by app without sudo)
+                if [ -f \(stopArg) ]; then
+                    echo "Stop file detected, terminating sing-box..." >> \(logArg)
+                    kill -TERM $SINGBOX_PID 2>/dev/null
+                    sleep 0.5
+                    kill -KILL $SINGBOX_PID 2>/dev/null
+                    rm -f \(stopArg) \(pidArg)
+                    exit 0
+                fi
+                # Check if sing-box is still running
+                if ! kill -0 $SINGBOX_PID 2>/dev/null; then
+                    echo "Sing-box exited, wrapper stopping..." >> \(logArg)
+                    rm -f \(pidArg)
+                    exit 0
+                fi
+            done
+        ) &
+        WRAPPER_PID=$!
+        echo "Wrapper PID: $WRAPPER_PID"
+        
+        # Return the sing-box PID
+        echo $SINGBOX_PID
         """
         try scriptContents.write(to: launchScriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: launchScriptURL.path)
@@ -586,9 +775,39 @@ final class LocalProcessEngine: ProxyEngine {
     }
 
     private func stopPrivilegedProcess(pid: pid_t) throws {
-        let stopScript = "kill -TERM \(pid) 2>/dev/null || true; sleep 0.5; kill -KILL \(pid) 2>/dev/null || true; killall -TERM sing-box 2>/dev/null || true; sleep 0.2; killall -KILL sing-box 2>/dev/null || true; rm -f \(privilegedPidFile.path) \(privilegedDiagFile.path) \(privilegedLogFile?.path ?? "/tmp/singbox-privileged.log")"
+        // NEW APPROACH: Use stop file mechanism - NO PASSWORD REQUIRED!
+        // The wrapper script monitors this file and kills sing-box when it appears
+        let stopFile = privilegedStopFile
+        
+        logger.info("Stopping via stop-file mechanism (no password needed)")
+        
+        // Create the stop file - the wrapper script will detect it and kill sing-box
+        do {
+            try "stop".write(to: stopFile, atomically: true, encoding: .utf8)
+        } catch {
+            logger.warning("Failed to create stop file: \(error.localizedDescription)")
+        }
+        
+        // Wait for process to die (max 3 seconds)
+        let deadline = Date().addingTimeInterval(3.0)
+        while Date() < deadline {
+            // Check if process is still running
+            let result = kill(pid, 0)
+            let isRunning = (result == 0) || (result == -1 && errno == EPERM)
+            if !isRunning {
+                logger.info("Process stopped successfully via stop-file")
+                // Cleanup files
+                try? FileManager.default.removeItem(at: stopFile)
+                try? FileManager.default.removeItem(at: privilegedPidFile)
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        
+        // If stop file didn't work, try sudo -n (might work if recently authenticated)
+        logger.warning("Stop-file mechanism didn't work, trying sudo -n fallback")
+        let stopScript = "kill -TERM \(pid) 2>/dev/null || true; sleep 0.3; kill -KILL \(pid) 2>/dev/null || true; killall -TERM sing-box 2>/dev/null || true; killall -KILL sing-box 2>/dev/null || true; rm -f \(privilegedPidFile.path) \(privilegedDiagFile.path) \(privilegedLogFile?.path ?? "/tmp/singbox-privileged.log") \(stopFile.path)"
 
-        // Fast path: try sudo without prompting (returns non-zero if credentials not cached)
         let sudoProcess = Process()
         sudoProcess.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
         sudoProcess.arguments = ["-n", "/bin/sh", "-c", stopScript]
@@ -597,10 +816,12 @@ final class LocalProcessEngine: ProxyEngine {
         try? sudoProcess.run()
         sudoProcess.waitUntilExit()
         if sudoProcess.terminationStatus == 0 {
+            logger.info("Process stopped via sudo -n")
             return
         }
 
-        // Fallback: prompt once via AppleScript
+        // Last resort: AppleScript with password prompt
+        logger.warning("sudo -n failed, falling back to AppleScript (will prompt for password)")
         let stopScriptURL = URL(fileURLWithPath: "/tmp/singbox-stop.sh")
         try stopScript.write(to: stopScriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stopScriptURL.path)

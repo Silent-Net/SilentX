@@ -20,6 +20,44 @@ struct SilentXApp: App {
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
         }
+        
+        // T059: Create App Group shared directory on first launch
+        setupSharedContainers()
+    }
+    
+    /// Setup shared containers for App Group communication with System Extension
+    private func setupSharedContainers() {
+        let fileManager = FileManager.default
+        
+        // Create App Group container directories
+        if let groupContainer = fileManager.containerURL(forSecurityApplicationGroupIdentifier: FilePath.groupIdentifier) {
+            let directories = [
+                groupContainer,
+                groupContainer.appendingPathComponent("Working"),
+                groupContainer.appendingPathComponent("Cache"),
+                groupContainer.appendingPathComponent("Logs")
+            ]
+            
+            for directory in directories {
+                if !fileManager.fileExists(atPath: directory.path) {
+                    try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+                }
+            }
+        }
+        
+        // Also ensure standard app support directories exist
+        let appSupportDirs = [
+            FilePath.applicationSupport,
+            FilePath.profiles,
+            FilePath.cores,
+            FilePath.logs
+        ]
+        
+        for directory in appSupportDirs {
+            if !fileManager.fileExists(atPath: directory.path) {
+                try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+        }
     }
     
     /// Shared SwiftData model container

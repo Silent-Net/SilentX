@@ -1,18 +1,14 @@
 # SilentX .gitignore
 # macOS/Swift/Xcode project
 
-# Xcode build outputs
+# Xcode
+## Build generated
 build/
 DerivedData/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
-xcuserdata/
-*.hmap
-*.ipa
-*.dSYM.zip
-*.dSYM
 
-# Xcode private settings
+## Xcode private settings
 *.xcuserstate
 *.xcscmblueprint
 *.xccheckout
@@ -67,6 +63,11 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Archives
+*.ipa
+*.dSYM.zip
+*.dSYM
 
 # Sing-Box cores (downloaded binaries)
 cores/

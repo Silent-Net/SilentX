@@ -12,6 +12,7 @@ import SwiftData
 struct DetailView: View {
     let selection: NavigationItem?
     @EnvironmentObject var connectionService: ConnectionService
+    @State private var groupsViewModel = GroupsViewModel()
     
     var body: some View {
         Group {
@@ -19,16 +20,21 @@ struct DetailView: View {
             case .dashboard:
                 DashboardView()
                     .environmentObject(connectionService)
+            case .groups:
+                GroupsView()
+                    .environment(groupsViewModel)
+                    .environmentObject(connectionService)
             case .profiles:
                 ProfileListView()
             case .nodes:
-                NodeListView()
+                ConfigNodeListView()  // Use config-based view
             case .rules:
-                RuleListView()
+                ConfigRuleListView()  // Use config-based view
             case .logs:
                 LogView()
             case .settings:
                 SettingsView()
+                    .environmentObject(connectionService)
             case .none:
                 EmptySelectionView()
             }
