@@ -1,7 +1,7 @@
-# Research: Sudo Proxy Refactor
+# Research: Dual-Core Proxy Architecture (双内核模式)
 
 **Feature**: 002-sudo-proxy-refactor
-**Date**: 2025-12-07
+**Date**: 2025-12-12 (Updated)
 **Status**: Complete
 
 ## Research Questions
@@ -9,77 +9,112 @@
 1. How to implement macOS privilege escalation for launching sing-box with root permissions?
 2. How does sing-box for apple (SFM) implement TUN mode?
 3. What architecture should we use: SMJobBless helper vs Network Extension?
+4. **NEW**: How to avoid repeated password prompts for LocalProcessEngine (sudo mode)?
 
 ---
 
-## Decision 1: Privilege Escalation Approach
+## Decision 1: Privilege Escalation Approach (Updated)
 
-### Decision: Use Network Extension (NEPacketTunnelProvider) instead of sudo/SMJobBless
+### Decision: Dual-Engine Architecture
 
-### Rationale
+| Engine | Purpose | UX |
+|--------|---------|-----|
+| **NetworkExtensionEngine** | TUN mode, full VPN routing | One-time system extension approval, then password-free |
+| **LocalProcessEngine** | HTTP/SOCKS proxy, dev/debug | Either SMJobBless helper OR sudo-with-caching |
 
-After researching sing-box for apple (SFM) implementation:
+### Key Insight from SFM
 
-1. **SFM does NOT use sudo or SMJobBless** - It uses Apple's Network Extension framework
-2. **NEPacketTunnelProvider** handles TUN interface creation natively without requiring root
-3. **System Extension** (`SFM.System`) provides the packet tunnel functionality
-4. **No password prompt needed** after initial system extension approval
+After deep analysis of `/RefRepo/sing-box-for-apple`:
 
-### How SFM Works
+1. **SFM uses System Extension** (`SFM.System`) with `NEPacketTunnelProvider`
+2. **No sudo passwords at all** - macOS handles extension approval once
+3. **Extension runs as separate process** managed by launchd
+4. Uses **Libbox** (Go-compiled library) inside extension for sing-box core
+
+### How SFM Works (Architecture)
 
 ```
-SFM (Main App)
-    ├── Uses NETunnelProviderManager to control tunnel
-    ├── Calls manager.connection.startVPNTunnel()
-    └── Passes username via options for path resolution
-
-SFM.System (System Extension)
-    ├── PacketTunnelProvider extends ExtensionProvider
-    ├── ExtensionProvider extends NEPacketTunnelProvider
-    ├── Creates LibboxNewService() with config content
-    └── Calls service.start() to launch sing-box core
+┌─────────────────────────────────────────────────────────────────┐
+│                    SFM (Main App - Sandboxed)                   │
+├─────────────────────────────────────────────────────────────────┤
+│  ExtensionProfile                                                │
+│    ├── NETunnelProviderManager (loadAllFromPreferences)         │
+│    ├── manager.connection.startVPNTunnel(options:)              │
+│    └── manager.connection.stopVPNTunnel()                        │
+│                                                                  │
+│  ExtensionEnvironments                                           │
+│    ├── Observes NEVPNStatus notifications                        │
+│    └── Publishes status to UI                                    │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              │ IPC via NetworkExtension framework
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│            SFM.System (System Extension - Not Sandboxed)        │
+├─────────────────────────────────────────────────────────────────┤
+│  PacketTunnelProvider : NEPacketTunnelProvider                  │
+│    ├── startTunnel(options:) -> reads config from App Group     │
+│    ├── LibboxNewService(config, platformInterface)              │
+│    ├── service.start() -> creates TUN, runs sing-box            │
+│    └── stopTunnel(reason:) -> service.close()                   │
+│                                                                  │
+│  ExtensionPlatformInterface                                      │
+│    ├── Implements Libbox callbacks                               │
+│    └── Handles TUN packet I/O                                    │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Files in SFM
+### Key Files in SFM Reference
 
 | File | Purpose |
 |------|---------|
-| `Library/Network/ExtensionProfile.swift` | Manages VPN tunnel start/stop |
-| `Library/Network/ExtensionProvider.swift` | Base class for packet tunnel |
-| `SystemExtension/PacketTunnelProvider.swift` | macOS system extension entry |
-| `SFM/SFM.entitlements` | App capabilities |
-
-### Alternatives Considered
-
-| Approach | Pros | Cons |
-|----------|------|------|
-| **SMJobBless + Privileged Helper** | One-time password, then silent | Complex setup, needs helper daemon, launchd plist |
-| **AuthorizationExecuteWithPrivileges** | Simple API | Deprecated since macOS 10.7, security risk |
-| **Network Extension** | Apple-sanctioned, no password after approval, App Store compatible | Requires system extension approval, more complex architecture |
-| **osascript do shell script with administrator privileges** | Quick hack | Not reliable, poor UX, not App Store compatible |
-
-### Implementation Impact
-
-- Need to create System Extension target in Xcode
-- Need to embed sing-box core via Libbox (Go library compiled for Apple)
-- Main app communicates with extension via NETunnelProviderManager
-- No sudo prompt - uses macOS system extension approval flow
+| `Library/Network/ExtensionProfile.swift` | `start()`, `stop()` via NETunnelProviderManager |
+| `Library/Network/ExtensionProvider.swift` | Base `NEPacketTunnelProvider` with Libbox integration |
+| `Library/Network/SystemExtension.swift` | System extension install/uninstall via `OSSystemExtensionRequest` |
+| `SystemExtension/PacketTunnelProvider.swift` | macOS entry point, sets up paths |
+| `SystemExtension/Info.plist` | `NEMachServiceName`, `NEProviderClasses` |
+| `SystemExtension/SystemExtension.entitlements` | `packet-tunnel-provider-systemextension` |
 
 ---
 
-## Decision 2: Architecture for Hybrid Mode Support
+## Decision 2: Solving Repeated Password Prompts (NEW)
+
+### Problem
+
+Current LocalProcessEngine uses AppleScript `do shell script with administrator privileges` for every connect AND disconnect. This is terrible UX:
+- Password prompt on connect
+- Password prompt on disconnect
+- User fatigue → poor adoption
+
+### Solution Options Analyzed
+
+| Approach | Connect | Disconnect | Complexity | App Store |
+|----------|---------|------------|------------|-----------|
+| **A: SMJobBless Helper** | No prompt after first | No prompt | High | Yes |
+| **B: sudo -n with cached credentials** | Prompt every 5 min | Fast path with -n | Low | No |
+| **C: Network Extension** | System approval once | No prompt | Medium | Yes |
+| **D: Keep current AppleScript** | Prompt every time | Prompt every time | None | No |
+
+### Decision: Implement Option C (NetworkExtensionEngine) as Primary
+
+**Rationale:**
+1. **SFM proves it works** - this is the production-tested approach
+2. **Best UX** - one-time system extension approval, then passwordless forever
+3. **App Store compatible** - required for distribution
+4. **Full TUN support** - HTTP/SOCKS AND system-wide VPN routing
+
+### Fallback: Keep LocalProcessEngine for Development
+
+For users who don't want system extension or for debugging:
+- Continue using current sudo approach
+- Accept the password prompts as "dev mode" cost
+- Maybe add `sudo -n` fast-path for cached credentials (already partially done)
+
+---
+
+## Decision 3: Architecture for Hybrid Mode Support (Confirmed)
 
 ### Decision: Protocol-based ProxyEngine abstraction with two implementations
-
-### Rationale
-
-The spec requires supporting both "Sudo Kernel Mode" and "Network Extension Mode" with easy switching. However, based on research:
-
-1. **"Sudo Mode" is not how SFM works** - SFM uses Network Extension exclusively
-2. **Direct process launch** (current approach) can work for HTTP proxy but NOT for TUN
-3. **TUN requires root or Network Extension** - there's no middle ground
-
-### Revised Architecture
 
 ```swift
 protocol ProxyEngine {
@@ -87,77 +122,96 @@ protocol ProxyEngine {
     func stop() async throws
     var status: ConnectionStatus { get }
     var statusPublisher: AnyPublisher<ConnectionStatus, Never> { get }
+    var engineType: EngineType { get }
 }
 
-// Implementation 1: Network Extension (recommended for TUN)
+// Implementation 1: Network Extension (RECOMMENDED)
 class NetworkExtensionEngine: ProxyEngine {
-    // Uses NETunnelProviderManager
-    // Requires System Extension target
+    // Uses NETunnelProviderManager to control system extension
+    // NO password prompts after initial approval
     // Full TUN support
+    // App Store compatible
 }
 
-// Implementation 2: Local Process (for HTTP proxy only, no TUN)
+// Implementation 2: Local Process (for dev/debug)
 class LocalProcessEngine: ProxyEngine {
-    // Current approach - launches sing-box as subprocess
-    // Works for mixed inbound (HTTP/SOCKS proxy)
-    // Does NOT support TUN mode
-    // No privilege escalation needed for non-privileged ports
+    // Current approach - launches sing-box via sudo
+    // Password prompts on connect/disconnect
+    // HTTP/SOCKS only (TUN requires sudo every time)
+    // NOT App Store compatible
 }
 ```
 
-### Mode Comparison
+### Mode Comparison (Updated)
 
 | Feature | LocalProcessEngine | NetworkExtensionEngine |
 |---------|-------------------|----------------------|
-| HTTP Proxy | Yes | Yes |
-| SOCKS Proxy | Yes | Yes |
-| TUN Mode | No (needs root) | Yes |
-| Password Prompt | No | No (after approval) |
-| App Store | Maybe | Yes |
-| Complexity | Low | High |
-
-### Alternatives Considered
-
-Keeping "Sudo Mode" as originally specified:
-- Would require SMJobBless privileged helper
-- Adds significant complexity
-- Not App Store compatible
-- SFM doesn't do this, so it's not the industry standard
+| HTTP/SOCKS Proxy | ✅ Yes | ✅ Yes |
+| TUN Mode | ⚠️ Requires sudo | ✅ Yes (native) |
+| Password Prompt | ❌ Every connect/disconnect | ✅ None after approval |
+| System Extension | Not needed | Required once |
+| App Store | ❌ No | ✅ Yes |
+| Complexity | Low | Medium |
+| Debug Friendly | ✅ Yes | ⚠️ Need console.app |
 
 ---
 
-## Decision 3: Implementation Phasing
+## Decision 4: Implementation Phasing (Revised)
 
-### Decision: Phase 1 - Fix LocalProcessEngine, Phase 2 - Add NetworkExtensionEngine
+### Phase 1: LocalProcessEngine (DONE ✅)
+Current state - working but with password prompts on every operation.
 
-### Rationale
+### Phase 2: NetworkExtensionEngine Implementation (THIS ITERATION)
 
-The current "Core process exited during startup" error needs to be fixed first. This is likely a configuration or permission issue, not an architectural problem.
+**Goal**: Implement full Network Extension support following SFM pattern.
 
-### Phase 1: Fix Current Implementation (P1 Priority)
-1. Debug why sing-box exits during startup
-2. Improve error handling and logging
-3. Ensure HTTP/SOCKS proxy mode works reliably
-4. Refactor to ProxyEngine protocol for future extensibility
+#### 2.1 Create System Extension Target
 
-### Phase 2: Add Network Extension (P2 Priority)
-1. Create System Extension target
-2. Integrate Libbox (sing-box Go library)
-3. Implement PacketTunnelProvider
-4. Add TUN mode support
+```
+SilentX.System/
+├── Info.plist
+├── main.swift (or @main struct)
+├── PacketTunnelProvider.swift
+└── SilentX.System.entitlements
+```
 
-### Alternatives Considered
+#### 2.2 Integrate Libbox
 
-Implementing Network Extension first:
-- More complex, longer time to fix current issues
-- User can't use app at all until NE is complete
-- Higher risk of integration issues
+Options:
+1. **Build from source** - Use `make build_for_apple` in sing-box repo
+2. **Use prebuilt XCFramework** - Download from sing-box releases
+
+#### 2.3 Implement NetworkExtensionEngine
+
+```swift
+// SilentX/Services/Engines/NetworkExtensionEngine.swift
+final class NetworkExtensionEngine: ProxyEngine {
+    private var profile: ExtensionProfile?
+    
+    func start(config: ProxyConfiguration) async throws {
+        // 1. Check if system extension installed
+        // 2. Write config to App Group shared container
+        // 3. Call profile.start() -> startVPNTunnel()
+    }
+    
+    func stop() async throws {
+        // Call profile.stop() -> stopVPNTunnel()
+    }
+}
+```
+
+#### 2.4 System Extension Installation UI
+
+Add to Settings:
+- "Install System Extension" button
+- Status indicator (installed/pending/not installed)
+- Follow SFM's `InstallSystemExtensionButton` pattern
 
 ---
 
 ## Technical Details: Network Extension Implementation
 
-### Required Entitlements (Main App)
+### Required Entitlements (Main App - SilentX.entitlements)
 
 ```xml
 <key>com.apple.developer.networking.networkextension</key>
@@ -166,48 +220,106 @@ Implementing Network Extension first:
 </array>
 <key>com.apple.security.application-groups</key>
 <array>
-    <string>group.your.app.identifier</string>
+    <string>group.Silent-Net.SilentX</string>
 </array>
 ```
 
-### Required Entitlements (System Extension)
+### Required Entitlements (System Extension - SilentX.System.entitlements)
 
 ```xml
 <key>com.apple.developer.networking.networkextension</key>
 <array>
     <string>packet-tunnel-provider-systemextension</string>
 </array>
+<key>com.apple.security.application-groups</key>
+<array>
+    <string>group.Silent-Net.SilentX</string>
+</array>
+<key>com.apple.security.app-sandbox</key>
+<false/>
 ```
 
-### Key APIs
+### System Extension Info.plist
+
+```xml
+<key>NetworkExtension</key>
+<dict>
+    <key>NEMachServiceName</key>
+    <string>group.Silent-Net.SilentX.system</string>
+    <key>NEProviderClasses</key>
+    <dict>
+        <key>com.apple.networkextension.packet-tunnel</key>
+        <string>$(PRODUCT_MODULE_NAME).PacketTunnelProvider</string>
+    </dict>
+</dict>
+```
+
+### Key APIs (from SFM Reference)
 
 ```swift
-// Starting tunnel (from main app)
-let manager = NETunnelProviderManager()
-try manager.connection.startVPNTunnel(options: [
-    "username": NSString(string: NSUserName())
-])
+// ExtensionProfile.swift - Starting tunnel
+public func start() async throws {
+    await fetchProfile()
+    manager.isEnabled = true
+    try await manager.saveToPreferences()
+    try manager.connection.startVPNTunnel(options: [
+        "username": NSString(string: NSUserName())  // For path resolution
+    ])
+}
 
-// In PacketTunnelProvider (system extension)
-override func startTunnel(options: [String: NSObject]?) async throws {
-    let service = LibboxNewService(configContent, platformInterface)
-    try service.start()
+// ExtensionProfile.swift - Stopping tunnel
+public func stop() async throws {
+    if manager.isOnDemandEnabled {
+        manager.isOnDemandEnabled = false
+        try await manager.saveToPreferences()
+    }
+    manager.connection.stopVPNTunnel()
+}
+
+// SystemExtension.swift - Installing extension
+public static func install() async throws -> OSSystemExtensionRequest.Result? {
+    try await Task.detached {
+        try SystemExtension().activation()
+    }.result.get()
 }
 ```
 
 ### IPC Between App and Extension
 
-- Use App Groups for shared UserDefaults and files
-- Use `NETunnelProviderSession.sendProviderMessage()` for runtime commands
-- Extension reads config from shared container path
+1. **Config sharing**: App writes to `~/Library/Group Containers/group.Silent-Net.SilentX/`
+2. **Status updates**: Via `NEVPNStatusDidChange` notifications
+3. **Runtime commands**: Via `NETunnelProviderSession.sendProviderMessage()`
 
 ---
 
-## Research Sources
+## Libbox Integration
 
-- [sing-box-for-apple GitHub Repository](https://github.com/SagerNet/sing-box-for-apple)
-- Apple Developer Documentation: NetworkExtension Framework
-- Apple Developer Documentation: System Extensions
+### Option A: Build from Source
+
+```bash
+cd /path/to/sing-box
+make build_local_for_apple
+# Outputs: build/Libbox.xcframework
+```
+
+### Option B: Download Prebuilt
+
+Check sing-box releases for `Libbox-apple-*.xcframework.zip`
+
+### Key Libbox APIs (from ExtensionProvider.swift)
+
+```swift
+// Setup
+LibboxSetup(options, &error)
+LibboxRedirectStderr(logPath, &error)
+
+// Service lifecycle
+let commandServer = LibboxNewCommandServer(platformInterface, platformInterface, &error)
+commandServer.start()
+commandServer.startOrReloadService(configContent, options: overrideOptions)
+commandServer.closeService()
+commandServer.close()
+```
 
 ---
 
@@ -215,7 +327,20 @@ override func startTunnel(options: [String: NSObject]?) async throws {
 
 | Question | Answer |
 |----------|--------|
-| How to get root for TUN? | Use Network Extension, not sudo |
-| What does SFM use? | NEPacketTunnelProvider in System Extension |
-| Should we use SMJobBless? | No - Network Extension is the Apple-sanctioned approach |
-| Implementation priority? | Fix LocalProcess first, add NE later |
+| How to avoid repeated passwords? | Use Network Extension - no passwords after system approval |
+| What does SFM use? | System Extension + Libbox + NEPacketTunnelProvider |
+| Keep LocalProcessEngine? | Yes, as dev/debug fallback |
+| Implementation priority? | NetworkExtensionEngine is the primary goal now |
+| App Store path? | Network Extension is required for App Store |
+
+---
+
+## Next Steps
+
+1. Create `SilentX.System` target in Xcode
+2. Configure entitlements and Info.plist
+3. Integrate Libbox XCFramework
+4. Implement `PacketTunnelProvider`
+5. Implement `NetworkExtensionEngine` in main app
+6. Add system extension installation UI
+7. Test full connect/disconnect cycle without passwords

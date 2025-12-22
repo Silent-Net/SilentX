@@ -10,6 +10,7 @@ import SwiftUI
 /// Navigation items for the sidebar
 enum NavigationItem: String, CaseIterable, Identifiable {
     case dashboard = "Dashboard"
+    case groups = "Groups"
     case profiles = "Profiles"
     case nodes = "Nodes"
     case rules = "Rules"
@@ -22,6 +23,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .dashboard: return "gauge.medium"
+        case .groups: return "rectangle.3.group"
         case .profiles: return "doc.text"
         case .nodes: return "server.rack"
         case .rules: return "arrow.triangle.branch"
@@ -34,10 +36,11 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     var keyboardShortcut: KeyEquivalent? {
         switch self {
         case .dashboard: return "1"
-        case .profiles: return "2"
-        case .nodes: return "3"
-        case .rules: return "4"
-        case .logs: return "5"
+        case .groups: return "2"
+        case .profiles: return "3"
+        case .nodes: return "4"
+        case .rules: return "5"
+        case .logs: return "6"
         case .settings: return ","
         }
     }
@@ -45,7 +48,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     /// Whether this item should be in the main section
     var isMainSection: Bool {
         switch self {
-        case .dashboard, .profiles, .nodes, .rules, .logs:
+        case .dashboard, .groups, .profiles, .nodes, .rules, .logs:
             return true
         case .settings:
             return false

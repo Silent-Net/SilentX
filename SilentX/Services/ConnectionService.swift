@@ -8,6 +8,8 @@
 import Foundation
 import Combine
 import SwiftData
+import Darwin.POSIX.net
+import Darwin.POSIX.ifaddrs
 
 /// Protocol for connection service
 protocol ConnectionServiceProtocol: ObservableObject {
@@ -38,6 +40,14 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
     private var currentEngine: (any ProxyEngine)?
     private var cancellables = Set<AnyCancellable>()
     private let coreVersionService: any CoreVersionServiceProtocol
+    private var activeRuntimeConfigURL: URL?
+
+    // MARK: - Public Accessors
+    
+    /// Active config file path (for Groups panel to parse)
+    var activeConfigPath: URL? {
+        activeRuntimeConfigURL
+    }
 
     // MARK: - Initialization
 
@@ -62,17 +72,16 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         }
 
         lastProfile = profile
+        
+        // === DIAGNOSTIC LOGGING ===
+        print("========== CONNECTION SERVICE DIAGNOSTIC ==========")
+        print("Profile ID: \(profile.id)")
+        print("Profile name: \(profile.name)")
 
-        // T019: Create LocalProcessEngine based on profile preference
-        let engine: any ProxyEngine
-        switch profile.preferredEngine {
-        case .localProcess:
-            engine = LocalProcessEngine()
-        case .networkExtension:
-            // TODO: Phase 4 (US2) - Implement NetworkExtensionEngine
-            throw ConnectionError.engineNotAvailable("NetworkExtension engine not yet implemented")
-        }
+        // Create engine based on profile preference with fallback logic
+        let engine: any ProxyEngine = try await selectEngine(for: profile)
         currentEngine = engine
+        print("Selected engine: \(engine.engineType)")
 
         // T021: Subscribe to engine status updates
         engine.statusPublisher
@@ -82,15 +91,73 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Show progress immediately (preflight can take a moment)
+        status = .connecting
+
         // Prepare configuration
-        let configURL = FilePath.profilePath(for: profile.id)
-        try profile.configurationJSON.write(to: configURL, atomically: true, encoding: .utf8)
+        let profileConfigURL = FilePath.profilePath(for: profile.id)
+        let runtimeConfigURL = FilePath.runtimeConfigPath(for: profile.id)
+
+        // Always persist the *raw* profile JSON for inspection/export.
+        try profile.configurationJSON.write(to: profileConfigURL, atomically: true, encoding: .utf8)
+
+        // ONLY remove interface_name from TUN inbound - let sing-box auto-select
+        // This prevents "resource busy" when hardcoded utun is occupied
+        // Everything else stays exactly as-is, just like terminal
+        var runtimeConfigJSON = profile.configurationJSON
+        runtimeConfigJSON = clearTunInterfaceName(runtimeConfigJSON)
+        print("[Config] Removed interface_name, everything else unchanged")
+        
+        try runtimeConfigJSON.write(to: runtimeConfigURL, atomically: true, encoding: .utf8)
+        activeRuntimeConfigURL = runtimeConfigURL
+        
+        // === DIAGNOSTIC: Log config paths and summary ===
+        print("Profile config URL: \(profileConfigURL.path)")
+        print("Runtime config URL: \(runtimeConfigURL.path)")
+        
+        // Parse and log inbound types
+        if let data = runtimeConfigJSON.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let inbounds = json["inbounds"] as? [[String: Any]] {
+            let types = inbounds.compactMap { $0["type"] as? String }
+            print("Runtime config inbound types: \(types)")
+            
+            // Log TUN interface name if present
+            for inbound in inbounds where inbound["type"] as? String == "tun" {
+                if let ifName = inbound["interface_name"] as? String {
+                    print("TUN interface_name in config: \(ifName)")
+                }
+            }
+        }
 
         let coreURL = try resolveCoreBinary()
+        print("Core binary URL: \(coreURL.path)")
+
+        // Preflight: match terminal behavior (run/check equivalence) and surface full errors to UI.
+        // This runs without sudo; it should still validate config syntax/resources in most cases.
+        print("Running preflight check...")
+        do {
+            try await preflightSingBoxCheck(coreURL: coreURL, configURL: runtimeConfigURL)
+            print("Preflight check PASSED")
+        } catch let proxyError as ProxyError {
+            print("Preflight check FAILED: \(proxyError)")
+            status = .error(proxyError)
+            // Engine never started; tear down subscription and engine reference.
+            currentEngine = nil
+            cancellables.removeAll()
+            throw proxyError
+        } catch {
+            print("Preflight check FAILED: \(error)")
+            let proxyError = ProxyError.configInvalid("sing-box check failed: \(error.localizedDescription)")
+            status = .error(proxyError)
+            currentEngine = nil
+            cancellables.removeAll()
+            throw proxyError
+        }
 
         let config = ProxyConfiguration(
             profileId: profile.id,
-            configPath: configURL,
+            configPath: runtimeConfigURL,
             corePath: coreURL,
             logLevel: .info
         )
@@ -124,6 +191,7 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         // Cleanup
         currentEngine = nil
         cancellables.removeAll()
+        activeRuntimeConfigURL = nil
     }
 
     func restart() async throws {
@@ -138,6 +206,52 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
     }
 
     // MARK: - Private Methods
+
+    /// Select the appropriate engine based on service availability
+    /// Priority: PrivilegedHelper (if running) > Profile preference > LocalProcess (fallback)
+    /// 
+    /// KEY LOGIC: When Background Service is installed and running, ALWAYS use it
+    /// for passwordless operation. This is the whole point of installing the service.
+    private func selectEngine(for profile: Profile) async throws -> any ProxyEngine {
+        // PRIORITY 1: If Background Service is available, ALWAYS use it (passwordless!)
+        // This is the main feature - user installed service to avoid password prompts
+        if await PrivilegedHelperEngine.isServiceAvailable() {
+            return PrivilegedHelperEngine()
+        }
+        
+        // PRIORITY 2: Check profile preference for other engines
+        switch profile.preferredEngine {
+        case .privilegedHelper:
+            // Service was requested but not available
+            if PrivilegedHelperEngine.isServiceInstalled() {
+                throw ConnectionError.engineNotAvailable(
+                    "Privileged helper service is not responding.\nPlease check Settings → Proxy Mode."
+                )
+            }
+            throw ConnectionError.engineNotAvailable(
+                "Privileged helper service not installed.\nPlease install it in Settings → Proxy Mode for passwordless operation."
+            )
+            
+        case .networkExtension:
+            #if os(macOS)
+            if !(await NetworkExtensionEngine.isExtensionInstalled()) {
+                throw ConnectionError.engineNotAvailable(
+                    "System Extension not installed.\nPlease install it in Settings → Proxy Mode."
+                )
+            }
+            return NetworkExtensionEngine()
+            #else
+            throw ConnectionError.engineNotAvailable("NetworkExtension engine not available on this platform")
+            #endif
+            
+        case .localProcess:
+            // Fall through to LocalProcessEngine
+            break
+        }
+        
+        // PRIORITY 3: Fallback to LocalProcessEngine (requires password each time)
+        return LocalProcessEngine()
+    }
 
     private func resolveCoreBinary() throws -> URL {
         // Method 1: Try active version from CoreVersionService
@@ -199,6 +313,232 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         throw ConnectionError.coreError(
             "Sing-Box core not found.\nPlease download a core version in Settings."
         )
+    }
+
+    private func preflightSingBoxCheck(coreURL: URL, configURL: URL) async throws {
+        // Important: run in config directory so relative paths (rules, geosite, etc.) behave like terminal runs.
+        let workingDirectory = configURL.deletingLastPathComponent()
+        let args = ["check", "-c", configURL.path]
+
+        let result = try await runProcess(
+            executableURL: coreURL,
+            arguments: args,
+            currentDirectoryURL: workingDirectory
+        )
+
+        let combined = [result.stdout, result.stderr]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+
+        guard result.exitCode == 0 else {
+            let detail: String
+            if combined.isEmpty {
+                detail = "sing-box check exited with code \(result.exitCode), no output"
+            } else {
+                detail = "sing-box check exited with code \(result.exitCode)\n\n\(combined)"
+            }
+            throw ProxyError.configInvalid(detail)
+        }
+    }
+
+    private func runProcess(
+        executableURL: URL,
+        arguments: [String],
+        currentDirectoryURL: URL?
+    ) async throws -> (exitCode: Int32, stdout: String, stderr: String) {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = executableURL
+                process.arguments = arguments
+                process.currentDirectoryURL = currentDirectoryURL
+
+                let stdoutPipe = Pipe()
+                let stderrPipe = Pipe()
+                process.standardOutput = stdoutPipe
+                process.standardError = stderrPipe
+
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                process.waitUntilExit()
+
+                let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+
+                let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+                let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+
+                continuation.resume(returning: (process.terminationStatus, stdout, stderr))
+            }
+        }
+    }
+
+    /// Ensure config has a mixed inbound for HTTP/SOCKS proxy
+    /// This is needed because some subscription configs only have TUN inbound
+    private func ensureMixedInbound(_ configJSON: String) throws -> String {
+        guard let data = configJSON.data(using: .utf8),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var inbounds = json["inbounds"] as? [[String: Any]] else {
+            return configJSON
+        }
+        
+        // Check if mixed inbound already exists
+        let hasMixed = inbounds.contains { ($0["type"] as? String) == "mixed" }
+        if hasMixed {
+            return configJSON
+        }
+        
+        // Find the port from TUN's platform.http_proxy or use default 2088
+        var mixedPort = 2088
+        for inbound in inbounds {
+            if let platform = inbound["platform"] as? [String: Any],
+               let httpProxy = platform["http_proxy"] as? [String: Any],
+               let port = httpProxy["server_port"] as? Int {
+                mixedPort = port
+                break
+            }
+        }
+        
+        // Add mixed inbound
+        let mixedInbound: [String: Any] = [
+            "type": "mixed",
+            "tag": "mixed-in",
+            "listen": "127.0.0.1",
+            "listen_port": mixedPort,
+            "sniff": true,
+            "sniff_override_destination": false,
+            "set_system_proxy": false
+        ]
+        
+        inbounds.insert(mixedInbound, at: 0)
+        json["inbounds"] = inbounds
+        
+        guard let newData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
+              let newJSON = String(data: newData, encoding: .utf8) else {
+            return configJSON
+        }
+        
+        return newJSON
+    }
+    
+    /// Check if another VPN/TUN is active (e.g., SFM, Clash, etc.)
+    /// If so, we should use HTTP-only mode to avoid conflicts
+    private func isOtherTunActive() -> Bool {
+        // macOS can have many `utun*` interfaces even when no VPN is active.
+        // We only treat “other VPN active” as true when the system default route
+        // is currently bound to a tunnel-like interface.
+        guard let defaultIface = defaultRouteInterfaceIPv4() else { return false }
+        return defaultIface.hasPrefix("utun") || defaultIface.hasPrefix("ppp") || defaultIface.hasPrefix("ipsec")
+    }
+
+    private func defaultRouteInterfaceIPv4() -> String? {
+        // `route -n get default` is the most stable way to discover the active
+        // default route interface on macOS.
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/sbin/route")
+        process.arguments = ["-n", "get", "default"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            for rawLine in output.split(separator: "\n") {
+                let line = rawLine.trimmingCharacters(in: .whitespaces)
+                guard line.hasPrefix("interface:") else { continue }
+                return line.replacingOccurrences(of: "interface:", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+            }
+            return nil
+        } catch {
+            return nil
+        }
+    }
+    
+    /// Remove TUN inbound from config when other VPN is active
+    /// This allows SilentX to coexist with other VPN apps (SFM, Clash, etc.)
+    private func removeTunInboundIfNeeded(_ configJSON: String) throws -> String {
+        // Only remove TUN if another VPN is active
+        guard isOtherTunActive() else {
+            return configJSON
+        }
+        
+        guard let data = configJSON.data(using: .utf8),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var inbounds = json["inbounds"] as? [[String: Any]] else {
+            return configJSON
+        }
+        
+        // Remove TUN inbounds
+        let originalCount = inbounds.count
+        inbounds.removeAll { ($0["type"] as? String) == "tun" }
+        
+        if inbounds.count < originalCount {
+            // TUN was removed, make sure we have a mixed inbound
+            let hasMixed = inbounds.contains { ($0["type"] as? String) == "mixed" }
+            if !hasMixed {
+                // Add mixed inbound with default port
+                let mixedInbound: [String: Any] = [
+                    "type": "mixed",
+                    "tag": "mixed-in",
+                    "listen": "127.0.0.1",
+                    "listen_port": 2088,
+                    "sniff": true,
+                    "sniff_override_destination": false,
+                    "set_system_proxy": false
+                ]
+                inbounds.insert(mixedInbound, at: 0)
+            }
+            
+            json["inbounds"] = inbounds
+            
+            guard let newData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
+                  let newJSON = String(data: newData, encoding: .utf8) else {
+                return configJSON
+            }
+            
+            return newJSON
+        }
+        
+        return configJSON
+    }
+    
+    /// Remove hardcoded interface_name from TUN inbounds
+    /// This is the ONLY modification we make - lets sing-box auto-select available utun
+    private func clearTunInterfaceName(_ configJSON: String) -> String {
+        guard let data = configJSON.data(using: .utf8),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var inbounds = json["inbounds"] as? [[String: Any]] else {
+            return configJSON
+        }
+        
+        var modified = false
+        for i in 0..<inbounds.count {
+            guard (inbounds[i]["type"] as? String) == "tun" else { continue }
+            if inbounds[i]["interface_name"] != nil {
+                inbounds[i].removeValue(forKey: "interface_name")
+                modified = true
+            }
+        }
+        
+        guard modified else { return configJSON }
+        
+        json["inbounds"] = inbounds
+        guard let newData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
+              let newJSON = String(data: newData, encoding: .utf8) else {
+            return configJSON
+        }
+        return newJSON
     }
 }
 

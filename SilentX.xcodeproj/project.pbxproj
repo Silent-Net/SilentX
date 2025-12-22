@@ -6,6 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		CA3184512EEC68D400484BEC /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CA3184502EEC68D400484BEC /* NetworkExtension.framework */; };
+		CA3184592EEC68D400484BEC /* SilentX-Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CA31844E2EEC68D400484BEC /* SilentX-Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CA5E7A012F0C000100000001 /* silentx-service in Copy Service Binary */ = {isa = PBXBuildFile; fileRef = CA5E7A002F0C000100000002 /* silentx-service */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CA5E7A022F0C000100000003 /* install-service.sh in Resources */ = {isa = PBXBuildFile; fileRef = CA5E7A032F0C000100000004 /* install-service.sh */; };
+		CA5E7A042F0C000100000005 /* uninstall-service.sh in Resources */ = {isa = PBXBuildFile; fileRef = CA5E7A052F0C000100000006 /* uninstall-service.sh */; };
+		CA5E7A062F0C000100000007 /* launchd.plist.template in Resources */ = {isa = PBXBuildFile; fileRef = CA5E7A072F0C000100000008 /* launchd.plist.template */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		CA2BC55C2EE3CFCF009AEF46 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -21,13 +30,77 @@
 			remoteGlobalIDString = CA2BC54D2EE3CFCE009AEF46;
 			remoteInfo = SilentX;
 		};
+		CA3184572EEC68D400484BEC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CA2BC5462EE3CFCE009AEF46 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CA31844D2EEC68D400484BEC;
+			remoteInfo = "SilentX-Extension";
+		};
+		CA5E7A112F0C000100000012 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CA2BC5462EE3CFCE009AEF46 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CA5E7A0D2F0C00010000000E;
+			remoteInfo = "SilentX-Service";
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		CA31845E2EEC68D400484BEC /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				CA3184592EEC68D400484BEC /* SilentX-Extension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA5E7A0A2F0C00010000000B /* Copy Service Binary */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 7;
+			files = (
+				CA5E7A012F0C000100000001 /* silentx-service in Copy Service Binary */,
+			);
+			name = "Copy Service Binary";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA5E7A0B2F0C00010000000C /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		CA2BC54E2EE3CFCE009AEF46 /* SilentX.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SilentX.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA2BC55B2EE3CFCF009AEF46 /* SilentXTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SilentXTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA2BC5652EE3CFCF009AEF46 /* SilentXUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SilentXUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CA31844E2EEC68D400484BEC /* SilentX-Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "SilentX-Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		CA3184502EEC68D400484BEC /* NetworkExtension.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NetworkExtension.framework; path = System/Library/Frameworks/NetworkExtension.framework; sourceTree = SDKROOT; };
+		CA5E7A002F0C000100000002 /* silentx-service */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "silentx-service"; sourceTree = BUILT_PRODUCTS_DIR; };
+		CA5E7A032F0C000100000004 /* install-service.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "install-service.sh"; sourceTree = "<group>"; };
+		CA5E7A052F0C000100000006 /* uninstall-service.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "uninstall-service.sh"; sourceTree = "<group>"; };
+		CA5E7A072F0C000100000008 /* launchd.plist.template */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = launchd.plist.template; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		CA31845A2EEC68D400484BEC /* Exceptions for "SilentX-Extension" folder in "SilentX-Extension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CA31844D2EEC68D400484BEC /* SilentX-Extension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		CA2BC5502EE3CFCE009AEF46 /* SilentX */ = {
@@ -43,6 +116,19 @@
 		CA2BC5682EE3CFCF009AEF46 /* SilentXUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = SilentXUITests;
+			sourceTree = "<group>";
+		};
+		CA3184522EEC68D400484BEC /* SilentX-Extension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CA31845A2EEC68D400484BEC /* Exceptions for "SilentX-Extension" folder in "SilentX-Extension" target */,
+			);
+			path = "SilentX-Extension";
+			sourceTree = "<group>";
+		};
+		CA5E7A082F0C000100000009 /* SilentX-Service */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "SilentX-Service";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -69,6 +155,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CA31844B2EEC68D400484BEC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CA3184512EEC68D400484BEC /* NetworkExtension.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA5E7A102F0C000100000011 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -76,8 +177,12 @@
 			isa = PBXGroup;
 			children = (
 				CA2BC5502EE3CFCE009AEF46 /* SilentX */,
+				CA5E7A082F0C000100000009 /* SilentX-Service */,
+				CA5E7A092F0C00010000000A /* Resources */,
 				CA2BC55E2EE3CFCF009AEF46 /* SilentXTests */,
 				CA2BC5682EE3CFCF009AEF46 /* SilentXUITests */,
+				CA3184522EEC68D400484BEC /* SilentX-Extension */,
+				CA31844F2EEC68D400484BEC /* Frameworks */,
 				CA2BC54F2EE3CFCE009AEF46 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -88,8 +193,28 @@
 				CA2BC54E2EE3CFCE009AEF46 /* SilentX.app */,
 				CA2BC55B2EE3CFCF009AEF46 /* SilentXTests.xctest */,
 				CA2BC5652EE3CFCF009AEF46 /* SilentXUITests.xctest */,
+				CA31844E2EEC68D400484BEC /* SilentX-Extension.appex */,
+				CA5E7A002F0C000100000002 /* silentx-service */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		CA31844F2EEC68D400484BEC /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				CA3184502EEC68D400484BEC /* NetworkExtension.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		CA5E7A092F0C00010000000A /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				CA5E7A032F0C000100000004 /* install-service.sh */,
+				CA5E7A052F0C000100000006 /* uninstall-service.sh */,
+				CA5E7A072F0C000100000008 /* launchd.plist.template */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -102,10 +227,14 @@
 				CA2BC54A2EE3CFCE009AEF46 /* Sources */,
 				CA2BC54B2EE3CFCE009AEF46 /* Frameworks */,
 				CA2BC54C2EE3CFCE009AEF46 /* Resources */,
+				CA31845E2EEC68D400484BEC /* Embed Foundation Extensions */,
+				CA5E7A0A2F0C00010000000B /* Copy Service Binary */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				CA3184582EEC68D400484BEC /* PBXTargetDependency */,
+				CA5E7A0C2F0C00010000000D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				CA2BC5502EE3CFCE009AEF46 /* SilentX */,
@@ -163,6 +292,48 @@
 			productReference = CA2BC5652EE3CFCF009AEF46 /* SilentXUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		CA31844D2EEC68D400484BEC /* SilentX-Extension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CA31845B2EEC68D400484BEC /* Build configuration list for PBXNativeTarget "SilentX-Extension" */;
+			buildPhases = (
+				CA31844A2EEC68D400484BEC /* Sources */,
+				CA31844B2EEC68D400484BEC /* Frameworks */,
+				CA31844C2EEC68D400484BEC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CA3184522EEC68D400484BEC /* SilentX-Extension */,
+			);
+			name = "SilentX-Extension";
+			packageProductDependencies = (
+			);
+			productName = "SilentX-Extension";
+			productReference = CA31844E2EEC68D400484BEC /* SilentX-Extension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		CA5E7A0D2F0C00010000000E /* SilentX-Service */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CA5E7A0E2F0C00010000000F /* Build configuration list for PBXNativeTarget "SilentX-Service" */;
+			buildPhases = (
+				CA5E7A0F2F0C000100000010 /* Sources */,
+				CA5E7A102F0C000100000011 /* Frameworks */,
+				CA5E7A0B2F0C00010000000C /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CA5E7A082F0C000100000009 /* SilentX-Service */,
+			);
+			name = "SilentX-Service";
+			productName = "SilentX-Service";
+			productReference = CA5E7A002F0C000100000002 /* silentx-service */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -184,6 +355,12 @@
 						CreatedOnToolsVersion = 26.1.1;
 						TestTargetID = CA2BC54D2EE3CFCE009AEF46;
 					};
+					CA31844D2EEC68D400484BEC = {
+						CreatedOnToolsVersion = 26.1.1;
+					};
+					CA5E7A0D2F0C00010000000E = {
+						CreatedOnToolsVersion = 26.1.1;
+					};
 				};
 			};
 			buildConfigurationList = CA2BC5492EE3CFCE009AEF46 /* Build configuration list for PBXProject "SilentX" */;
@@ -203,6 +380,8 @@
 				CA2BC54D2EE3CFCE009AEF46 /* SilentX */,
 				CA2BC55A2EE3CFCF009AEF46 /* SilentXTests */,
 				CA2BC5642EE3CFCF009AEF46 /* SilentXUITests */,
+				CA31844D2EEC68D400484BEC /* SilentX-Extension */,
+				CA5E7A0D2F0C00010000000E /* SilentX-Service */,
 			);
 		};
 /* End PBXProject section */
@@ -212,6 +391,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CA5E7A022F0C000100000003 /* install-service.sh in Resources */,
+				CA5E7A042F0C000100000005 /* uninstall-service.sh in Resources */,
+				CA5E7A062F0C000100000007 /* launchd.plist.template in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -223,6 +405,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CA2BC5632EE3CFCF009AEF46 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA31844C2EEC68D400484BEC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -253,6 +442,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CA31844A2EEC68D400484BEC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA5E7A0F2F0C000100000010 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -265,6 +468,16 @@
 			isa = PBXTargetDependency;
 			target = CA2BC54D2EE3CFCE009AEF46 /* SilentX */;
 			targetProxy = CA2BC5662EE3CFCF009AEF46 /* PBXContainerItemProxy */;
+		};
+		CA3184582EEC68D400484BEC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CA31844D2EEC68D400484BEC /* SilentX-Extension */;
+			targetProxy = CA3184572EEC68D400484BEC /* PBXContainerItemProxy */;
+		};
+		CA5E7A0C2F0C00010000000D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CA5E7A0D2F0C00010000000E /* SilentX-Service */;
+			targetProxy = CA5E7A112F0C000100000012 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -397,7 +610,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SilentX/SilentX.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6G78W768M9;
@@ -430,7 +644,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SilentX/SilentX.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6G78W768M9;
@@ -462,7 +677,8 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_ENTITLEMENTS = SilentX/SilentX.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6G78W768M9;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -484,7 +700,8 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_ENTITLEMENTS = SilentX/SilentX.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6G78W768M9;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -505,7 +722,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = SilentX/SilentX.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6G78W768M9;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -525,7 +743,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = SilentX/SilentX.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6G78W768M9;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -538,6 +757,106 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TEST_TARGET_NAME = SilentX;
+			};
+			name = Release;
+		};
+		CA31845C2EEC68D400484BEC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "SilentX-Extension/SilentX_Extension.entitlements";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6G78W768M9;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "SilentX-Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "SilentX-Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Silent-Net.SilentX.SilentX-Extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		CA31845D2EEC68D400484BEC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "SilentX-Extension/SilentX_Extension.entitlements";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6G78W768M9;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "SilentX-Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "SilentX-Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Silent-Net.SilentX.SilentX-Extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		CA5E7A122F0C000100000013 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6G78W768M9;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Silent-Net.SilentX.Service";
+				PRODUCT_NAME = "silentx-service";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		CA5E7A132F0C000100000014 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6G78W768M9;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Silent-Net.SilentX.Service";
+				PRODUCT_NAME = "silentx-service";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -576,6 +895,24 @@
 			buildConfigurations = (
 				CA2BC5762EE3CFCF009AEF46 /* Debug */,
 				CA2BC5772EE3CFCF009AEF46 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CA31845B2EEC68D400484BEC /* Build configuration list for PBXNativeTarget "SilentX-Extension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CA31845C2EEC68D400484BEC /* Debug */,
+				CA31845D2EEC68D400484BEC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CA5E7A0E2F0C00010000000F /* Build configuration list for PBXNativeTarget "SilentX-Service" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CA5E7A122F0C000100000013 /* Debug */,
+				CA5E7A132F0C000100000014 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

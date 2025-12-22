@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Service Identifier -->
+    <key>Label</key>
+    <string>com.silentnet.silentx.service</string>
+    
+    <!-- Program to execute -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/PrivilegedHelperTools/com.silentnet.silentx.service/silentx-service</string>
+    </array>
+    
+    <!-- Run at system boot -->
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <!-- Restart if exits (keep alive) -->
+    <key>KeepAlive</key>
+    <true/>
+    
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/tmp/silentx</string>
+    
+    <!-- Log files for debugging -->
+    <key>StandardOutPath</key>
+    <string>/tmp/silentx/silentx-service-stdout.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/tmp/silentx/silentx-service-stderr.log</string>
+    
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    
+    <!-- Limit CPU and memory usage -->
+    <key>ProcessType</key>
+    <string>Background</string>
+    
+    <!-- Throttle respawn to avoid rapid restart loops -->
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+    
+    <!-- Nice value (lower priority) -->
+    <key>Nice</key>
+    <integer>5</integer>
+</dict>
+</plist>

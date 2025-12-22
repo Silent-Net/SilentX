@@ -14,7 +14,13 @@ struct ConnectionInfo: Equatable {
 
     /// Human-readable duration string
     var formattedDuration: String {
-        let duration = self.duration
+        formattedDuration(to: Date())
+    }
+    
+    /// Human-readable duration string calculated to a specific time (T067)
+    /// Used for live UI updates where currentTime is provided by a timer
+    func formattedDuration(to currentTime: Date) -> String {
+        let duration = currentTime.timeIntervalSince(startTime)
         let hours = Int(duration) / 3600
         let minutes = Int(duration) / 60 % 60
         let seconds = Int(duration) % 60
