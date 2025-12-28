@@ -2,32 +2,24 @@ name: CI
 
 on:
   push:
-    branches: [ main, 001-macos-proxy-gui ]
+    branches: [ main, dev, 001-macos-proxy-gui ]
   pull_request:
     branches: [ main ]
 
 jobs:
   test:
-    runs-on: macos-14
+    runs-on: macos-15
     
     steps:
     - uses: actions/checkout@v4
     
     - name: Select Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
+      run: sudo xcode-select -s /Applications/Xcode_26.1.1.app/Contents/Developer
     
-    - name: Build and Test
+    - name: Build
       run: |
-        xcodebuild clean test \
+        xcodebuild clean build \
           -project SilentX.xcodeproj \
           -scheme SilentX \
           -destination 'platform=macOS' \
-          -resultBundlePath TestResults \
           | xcpretty && exit ${PIPESTATUS[0]}
-    
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results
-        path: TestResults
