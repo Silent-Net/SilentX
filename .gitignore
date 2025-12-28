@@ -91,3 +91,7 @@ __pycache__/
 
 # Database
 cache.db
+
+# Personal config files
+correct.json
+failure.json
