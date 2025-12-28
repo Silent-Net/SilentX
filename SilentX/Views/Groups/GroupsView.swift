@@ -67,7 +67,7 @@ struct GroupsView: View {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text("选择一个代理组")
+            Text("Select a proxy group")
                 .font(.headline)
                 .foregroundStyle(.secondary)
         }
@@ -81,10 +81,10 @@ struct GroupsView: View {
             Image(systemName: "network.slash")
                 .font(.system(size: 64))
                 .foregroundStyle(.secondary)
-            Text("请先连接代理")
+            Text("Please connect first")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-            Text("连接代理后即可查看和管理代理组")
+            Text("Connect to proxy to view and manage groups")
                 .font(.subheadline)
                 .foregroundStyle(.tertiary)
         }
@@ -95,7 +95,7 @@ struct GroupsView: View {
         VStack(spacing: 16) {
             ProgressView()
                 .scaleEffect(1.5)
-            Text("正在加载代理组...")
+            Text("Loading proxy groups...")
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -106,12 +106,12 @@ struct GroupsView: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 48))
                 .foregroundStyle(.orange)
-            Text("加载失败")
+            Text("Loading failed")
                 .font(.title2)
             Text(message)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Button("重试") {
+            Button("Retry") {
                 Task {
                     await viewModel.refresh()
                 }
@@ -126,10 +126,10 @@ struct GroupsView: View {
             Image(systemName: "tray")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text("没有代理组")
+            Text("No Proxy Groups")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-            Text("当前配置没有可用的代理组")
+            Text("No proxy groups available in current configuration")
                 .font(.subheadline)
                 .foregroundStyle(.tertiary)
         }

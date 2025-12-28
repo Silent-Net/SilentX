@@ -13,27 +13,27 @@ enum EngineType: String, Codable {
     
     // MARK: - Display Names (T068)
     
-    /// Chinese display name for UI
+    /// Display name for UI
     var displayName: String {
         switch self {
         case .localProcess:
-            return "本地进程模式"
+            return "Local Process Mode"
         case .networkExtension:
-            return "系统扩展模式"
+            return "System Extension Mode"
         case .privilegedHelper:
-            return "免密码模式"
+            return "Passwordless Mode"
         }
     }
     
-    /// English display name
-    var displayNameEN: String {
+    /// Short identifier
+    var shortName: String {
         switch self {
         case .localProcess:
-            return "Local Process"
+            return "Local"
         case .networkExtension:
-            return "Network Extension"
+            return "Extension"
         case .privilegedHelper:
-            return "Privileged Helper"
+            return "Helper"
         }
     }
     

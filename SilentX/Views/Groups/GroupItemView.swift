@@ -28,11 +28,6 @@ struct GroupItemView: View {
                     .font(.system(size: 14))
             }
             
-            // Node icon
-            Image(systemName: item.typeIcon)
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
-            
             // Node info
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.tag)

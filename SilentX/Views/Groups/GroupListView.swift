@@ -30,7 +30,7 @@ struct GroupListView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .help("刷新")
+                .help("Refresh")
                 .disabled(viewModel.isLoading)
             }
         }

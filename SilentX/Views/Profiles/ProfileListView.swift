@@ -12,6 +12,8 @@ import UniformTypeIdentifiers
 /// Main profile list view
 struct ProfileListView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var connectionService: ConnectionService
+    @AppStorage("selectedProfileID") private var selectedProfileID: String = ""
     
     // SwiftData query with explicit sort descriptor to avoid crashes
     @Query(
@@ -25,6 +27,9 @@ struct ProfileListView: View {
     @State private var isTargeted = false
     @State private var errorMessage: String?
     @State private var showError = false
+    @State private var profileToRename: Profile?
+    @State private var profileToEdit: Profile?
+    @State private var newProfileName: String = ""
     
     var body: some View {
         Group {
@@ -61,6 +66,28 @@ struct ProfileListView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "An unknown error occurred")
+        }
+        // Rename alert
+        .alert("Rename Profile", isPresented: Binding(
+            get: { profileToRename != nil },
+            set: { if !$0 { profileToRename = nil } }
+        )) {
+            TextField("Profile Name", text: $newProfileName)
+            Button("Cancel", role: .cancel) {
+                profileToRename = nil
+            }
+            Button("Rename") {
+                if let profile = profileToRename {
+                    renameProfile(profile, to: newProfileName)
+                }
+                profileToRename = nil
+            }
+        } message: {
+            Text("Enter a new name for this profile.")
+        }
+        // Edit config sheet
+        .sheet(item: $profileToEdit) { profile in
+            ProfileEditorView(profile: profile)
         }
         .onDrop(of: [.json, .fileURL], isTargeted: $isTargeted) { providers in
             handleFileDrop(providers)
@@ -115,6 +142,19 @@ struct ProfileListView: View {
         
         Divider()
         
+        Button {
+            newProfileName = profile.name
+            profileToRename = profile
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+        
+        Button {
+            profileToEdit = profile
+        } label: {
+            Label("Edit Config", systemImage: "doc.text")
+        }
+        
         if profile.type == .remote {
             Button {
                 Task {
@@ -151,13 +191,38 @@ struct ProfileListView: View {
         // Select this profile
         profile.isSelected = true
         
+        // Save the selected profile ID for Dashboard sync
+        selectedProfileID = profile.id.uuidString
+        
         try? modelContext.save()
+        
+        // If connected, restart with the new profile immediately (SFM-like instant switch)
+        if case .connected = connectionService.status {
+            Task {
+                do {
+                    try await connectionService.disconnect()
+                    try await connectionService.connect(profile: profile)
+                } catch {
+                    await MainActor.run {
+                        errorMessage = error.localizedDescription
+                        showError = true
+                    }
+                }
+            }
+        }
     }
     
     private func deleteProfiles(at offsets: IndexSet) {
         for index in offsets {
             modelContext.delete(profiles[index])
         }
+        try? modelContext.save()
+    }
+    
+    private func renameProfile(_ profile: Profile, to newName: String) {
+        guard !newName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        profile.name = newName.trimmingCharacters(in: .whitespaces)
+        profile.updatedAt = Date()
         try? modelContext.save()
     }
     

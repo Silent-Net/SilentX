@@ -71,7 +71,7 @@ struct ConnectionStatusView: View {
                     Button(action: reconnect) {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.clockwise")
-                            Text("重连")
+                            Text("Reconnect")
                         }
                         .font(.caption)
                         .foregroundColor(.white)
@@ -128,7 +128,7 @@ private struct ErrorRecoveryView: View {
                     .padding(.bottom, 4)
             }
             
-            Text("建议操作 / Suggested Actions:")
+            Text("Suggested Actions:")
                 .font(.caption.bold())
             
             ForEach(suggestedActions, id: \.self) { action in
@@ -149,65 +149,58 @@ private struct ErrorRecoveryView: View {
         switch error {
         case .extensionNotInstalled:
             return [
-                "前往 设置 → 代理模式 安装系统扩展",
                 "Go to Settings → Proxy Mode to install system extension"
             ]
         case .extensionNotApproved:
             return [
-                "前往 系统设置 → 隐私与安全性 批准扩展",
-                "Go to System Settings → Privacy & Security to approve"
+                "Go to System Settings → Privacy & Security to approve extension"
             ]
         case .extensionLoadFailed:
             return [
-                "尝试重新安装系统扩展",
                 "Try reinstalling the system extension"
             ]
         case .tunnelStartFailed:
             return [
-                "检查 VPN 配置是否正确",
-                "Check network connectivity",
-                "查看系统设置中的 VPN 状态"
+                "Check VPN configuration is correct",
+                "Check network connectivity"
             ]
         case .coreNotFound:
             return [
-                "前往 设置 → 内核版本 下载 Sing-Box",
-                "Go to Settings → Core Versions to download"
+                "Go to Settings → Core Versions to download Sing-Box"
             ]
         case .coreStartFailed:
             return [
-                "检查配置文件是否有效",
-                "查看日志获取详细错误信息",
-                "尝试使用其他配置文件"
+                "Check if configuration file is valid",
+                "View logs for detailed error information",
+                "Try using a different configuration file"
             ]
         case .configNotFound, .configInvalid:
             return [
-                "检查配置文件是否存在",
-                "验证 JSON 格式是否正确",
-                "尝试重新导入配置"
+                "Check if configuration file exists",
+                "Verify JSON format is correct",
+                "Try re-importing the configuration"
             ]
         case .portConflict(let ports):
             return [
-                "端口 \(ports.map(String.init).joined(separator: ", ")) 被占用",
-                "关闭占用端口的程序后重试",
-                "或修改配置使用其他端口"
+                "Ports \(ports.map(String.init).joined(separator: ", ")) are in use",
+                "Close the program using these ports and retry",
+                "Or modify configuration to use different ports"
             ]
         case .permissionDenied:
             return [
-                "检查应用程序权限",
-                "尝试以管理员身份运行",
-                "Check application permissions"
+                "Check application permissions",
+                "Try running as administrator"
             ]
         case .timeout:
             return [
-                "检查网络连接",
-                "尝试重新连接",
-                "查看日志获取详细信息"
+                "Check network connection",
+                "Try reconnecting",
+                "View logs for more information"
             ]
         case .unknown:
             return [
-                "尝试重新连接",
-                "检查日志获取更多信息",
-                "Try reconnecting"
+                "Try reconnecting",
+                "Check logs for more information"
             ]
         }
     }
@@ -218,7 +211,9 @@ private struct ErrorRecoveryView: View {
 struct StatusIndicator: View {
     let status: ConnectionStatus
     
-    @State private var isAnimating = false
+    // Initialize to true to prevent animation on first appear
+    // This avoids the "fly in from corner" bug caused by implicit animation leak
+    @State private var isAnimating = true
     
     var body: some View {
         ZStack {
@@ -227,7 +222,7 @@ struct StatusIndicator: View {
                 .fill(status.color.opacity(0.2))
                 .frame(width: 44, height: 44)
             
-            // Main indicator
+            // Main indicator - use explicit animation scoped to isAnimating only
             Circle()
                 .fill(status.color)
                 .frame(width: 20, height: 20)
@@ -236,7 +231,7 @@ struct StatusIndicator: View {
                     status.isTransitioning 
                         ? .easeInOut(duration: 0.6).repeatForever(autoreverses: true)
                         : .default,
-                    value: isAnimating
+                    value: status.isTransitioning
                 )
             
             // Pulse effect for connected state
@@ -252,9 +247,7 @@ struct StatusIndicator: View {
                     )
             }
         }
-        .onAppear {
-            isAnimating = true
-        }
+        // No onAppear needed since isAnimating starts as true
     }
 }
 

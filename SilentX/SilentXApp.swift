@@ -7,6 +7,9 @@
 
 import SwiftUI
 import SwiftData
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 struct SilentXApp: App {
@@ -14,6 +17,10 @@ struct SilentXApp: App {
     /// Track first launch for onboarding
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showWelcome = false
+    
+    /// Appearance settings
+    @AppStorage("colorScheme") private var colorScheme = AppColorScheme.system
+    @AppStorage("accentColor") private var accentColor = AppAccentColor.blue
     
     init() {
         // Disable window restoration during tests to prevent crash on reopening
@@ -101,6 +108,9 @@ struct SilentXApp: App {
     var body: some Scene {
         WindowGroup {
             MainView()
+                // Don't use preferredColorScheme - it conflicts with NSApp.appearance
+                // and causes lag. NSApp.appearance is the proper macOS way.
+                .tint(accentColor.color)
                 .sheet(isPresented: $showWelcome) {
                     WelcomeView()
                 }
@@ -109,6 +119,12 @@ struct SilentXApp: App {
                     if !hasCompletedOnboarding {
                         showWelcome = true
                     }
+                    // Apply initial appearance immediately
+                    applyColorScheme()
+                }
+                .onChange(of: colorScheme) { _, _ in
+                    // Apply appearance change immediately when setting changes
+                    applyColorScheme()
                 }
         }
         .modelContainer(sharedModelContainer)
@@ -141,4 +157,19 @@ struct SilentXApp: App {
         }
         #endif
     }
+    
+    // MARK: - Appearance Helpers
+    
+    #if os(macOS)
+    /// Apply color scheme using NSApp.appearance for proper macOS behavior
+    private func applyColorScheme() {
+        // Setting NSApp.appearance directly is the canonical macOS way
+        // nil means follow system setting
+        NSApp.appearance = colorScheme.nsAppearance
+    }
+    #else
+    private func applyColorScheme() {
+        // On iOS, preferredColorScheme modifier handles this
+    }
+    #endif
 }

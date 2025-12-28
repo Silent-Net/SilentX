@@ -161,9 +161,9 @@ enum ConfigParserError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidFormat(let detail):
-            return "配置格式无效: \(detail)"
+            return "Invalid config format: \(detail)"
         case .fileNotFound(let path):
-            return "配置文件不存在: \(path)"
+            return "Config file not found: \(path)"
         }
     }
 }

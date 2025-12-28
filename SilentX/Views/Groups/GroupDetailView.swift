@@ -63,7 +63,7 @@ struct GroupDetailView: View {
                     Text("·")
                         .foregroundStyle(.tertiary)
                     
-                    Label("\(group.items.count) 节点", systemImage: "point.3.filled.connected.trianglepath.dotted")
+                    Label("\(group.items.count) nodes", systemImage: "point.3.filled.connected.trianglepath.dotted")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
@@ -85,7 +85,7 @@ struct GroupDetailView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("搜索节点", text: $searchText)
+                TextField("Search nodes", text: $searchText)
                     .textFieldStyle(.plain)
                     .frame(width: 120)
                 if !searchText.isEmpty {
@@ -116,12 +116,12 @@ struct GroupDetailView: View {
                     } else {
                         Image(systemName: "bolt.fill")
                     }
-                    Text("测速")
+                    Text("Speed Test")
                 }
             }
             .buttonStyle(.bordered)
             .disabled(viewModel.isTesting)
-            .help("测试所有节点延迟")
+            .help("Test latency for all nodes")
         }
         .padding()
     }
@@ -164,7 +164,7 @@ struct GroupDetailView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 36))
                 .foregroundStyle(.secondary)
-            Text("没有找到匹配的节点")
+            Text("No matching nodes found")
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

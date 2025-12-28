@@ -128,23 +128,8 @@ struct ConfigRuleListView: View {
             }
         }
         .navigationTitle("Routing Rules")
+        .navigationSubtitle(finalOutbound.isEmpty ? "\(filteredRules.count) rules" : "\(filteredRules.count) rules · Final: \(finalOutbound)")
         .searchable(text: $searchText, prompt: "Search rules")
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Text("\(filteredRules.count) rules")
-                    .foregroundColor(.secondary)
-                    .font(.caption)
-                
-                if !finalOutbound.isEmpty {
-                    Text("Final: \(finalOutbound)")
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.accentColor.opacity(0.1))
-                        .cornerRadius(4)
-                }
-            }
-        }
         .onAppear {
             parseRules()
         }

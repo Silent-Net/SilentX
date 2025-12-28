@@ -116,7 +116,7 @@ final class GroupsViewModel {
             isAvailable = false
             logger.error("Failed to load groups: \(error.localizedDescription)")
         } catch {
-            errorMessage = "加载失败: \(error.localizedDescription)"
+            errorMessage = "Failed to load: \(error.localizedDescription)"
             isAvailable = false
             logger.error("Failed to load groups: \(error.localizedDescription)")
         }
@@ -189,7 +189,7 @@ final class GroupsViewModel {
         } catch {
             // Revert on error
             updateSelection(groupId: group.id, nodeTag: previousSelection)
-            errorMessage = "切换失败: \(error.localizedDescription)"
+            errorMessage = "Failed to switch: \(error.localizedDescription)"
             logger.error("Failed to select node: \(error.localizedDescription)")
         }
     }

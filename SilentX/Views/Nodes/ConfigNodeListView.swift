@@ -174,12 +174,6 @@ struct ConfigNodeRowView: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Protocol icon
-            Image(systemName: node.protocolIcon)
-                .font(.title2)
-                .foregroundStyle(node.isBuiltIn ? .secondary : .primary)
-                .frame(width: 30)
-            
             // Node info
             VStack(alignment: .leading, spacing: 4) {
                 Text(node.tag)

@@ -15,6 +15,9 @@ struct ProxyModeSettingsView: View {
     // MARK: - Properties
     
     @Environment(\.modelContext) private var modelContext
+    @Query private var allProfiles: [Profile]
+    @AppStorage("selectedProfileID") private var selectedProfileID: String = ""
+    
     @State private var extensionInstalled: Bool = false
     @State private var isInstalling: Bool = false
     @State private var isUninstalling: Bool = false
@@ -295,6 +298,7 @@ struct ProxyModeSettingsView: View {
         }
         .onAppear {
             serviceStatusVM.startStatusRefresh()
+            autoSelectProfileIfNeeded()
         }
         .onDisappear {
             serviceStatusVM.stopStatusRefresh()
@@ -421,6 +425,30 @@ struct ProxyModeSettingsView: View {
         profile.preferredEngine = newType
         try? modelContext.save()
         pendingEngineType = nil
+    }
+    
+    /// Auto-select a profile if none is currently selected
+    private func autoSelectProfileIfNeeded() {
+        // Skip if profile is already selected
+        guard selectedProfile == nil else { return }
+        
+        // Guard against empty profile list
+        guard !allProfiles.isEmpty else { return }
+        
+        // Try to find profile matching stored ID
+        if !selectedProfileID.isEmpty,
+           let stored = allProfiles.first(where: { $0.id.uuidString == selectedProfileID }) {
+            selectedProfile = stored
+            return
+        }
+        
+        // Fall back to first available profile
+        selectedProfile = allProfiles.first
+        
+        // Update stored ID if we selected a profile
+        if let profile = selectedProfile {
+            selectedProfileID = profile.id.uuidString
+        }
     }
 }
 

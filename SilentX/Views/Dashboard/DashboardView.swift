@@ -14,18 +14,25 @@ struct DashboardView: View {
     @Query private var allProfiles: [Profile]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("selectedProfileID") private var selectedProfileID: String = ""
+    @AppStorage("proxyMode") private var savedProxyMode: String = "rule"
     
     @State private var selectedProfile: Profile?
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
+    @State private var proxyMode: ProxyMode = .rule
     
     private var activeProfile: Profile? {
         selectedProfile
     }
     
+    private var isConnected: Bool {
+        if case .connected = connectionService.status { return true }
+        return false
+    }
+    
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: 20) {
                 // Connection status section
                 ConnectionSection(
                     status: connectionService.status,
@@ -33,19 +40,30 @@ struct DashboardView: View {
                     onDisconnect: handleDisconnect
                 )
                 
+                // Mode Switcher (only visible when connected)
+                if isConnected {
+                    ModeSwitcherView(
+                        selectedMode: $proxyMode,
+                        isConnected: isConnected,
+                        onModeChange: handleModeChange
+                    )
+                    .frame(maxWidth: 400)
+                }
+                
                 // Profile selector
                 ProfileSelectorView(selectedProfile: $selectedProfile)
                     .padding(.horizontal)
-
-                // TODO: Phase 6 - Re-implement statistics tracking
-                // Statistics section commented out until statistics tracking is implemented
-                // if connectionService.status.isConnected {
-                //     StatisticsView(...)
-                // }
+                
+                // System Proxy Controls (only visible when connected)
+                if isConnected {
+                    SystemProxyControlView()
+                        .frame(maxWidth: 400)
+                        .padding(.horizontal)
+                }
 
                 Spacer(minLength: 20)
             }
-            .padding(.vertical, 32)
+            .padding(.vertical, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Dashboard")
@@ -58,15 +76,36 @@ struct DashboardView: View {
             // Load saved profile on launch (like SFM's SharedPreferences.selectedProfileID)
             loadSavedProfile()
         }
-        .onChange(of: selectedProfile) { _, newValue in
+        .onChange(of: selectedProfile) { oldValue, newValue in
             // Save selected profile ID for next launch
             if let profile = newValue {
                 selectedProfileID = profile.id.uuidString
+                
+                // Instant switch: if connected and profile changed, restart with new profile immediately
+                if oldValue != nil && oldValue?.id != profile.id {
+                    if case .connected = connectionService.status {
+                        Task {
+                            await handleProfileSwitch(to: profile)
+                        }
+                    }
+                }
             }
         }
     }
     
     // MARK: - Profile Management
+    
+    /// Handle instant profile switch (disconnect + connect in one smooth operation)
+    private func handleProfileSwitch(to profile: Profile) async {
+        do {
+            // Use restart for cleaner transition
+            try await connectionService.disconnect()
+            try await connectionService.connect(profile: profile)
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+        }
+    }
     
     private func loadSavedProfile() {
         // Restore last selected profile (mimics SFM's SharedPreferences.selectedProfileID.get())
@@ -109,6 +148,16 @@ struct DashboardView: View {
             try await connectionService.disconnect()
         } catch {
             errorMessage = error.localizedDescription
+            showError = true
+        }
+    }
+    
+    private func handleModeChange(_ mode: ProxyMode) async {
+        do {
+            try await connectionService.setProxyMode(mode.rawValue)
+            savedProxyMode = mode.rawValue
+        } catch {
+            errorMessage = "Failed to change mode: \(error.localizedDescription)"
             showError = true
         }
     }

@@ -13,13 +13,16 @@ struct SidebarView: View {
     @Binding var selection: NavigationItem?
     @EnvironmentObject var connectionService: ConnectionService
     
+    // Appearance settings
+    @AppStorage("sidebarIconsOnly") private var sidebarIconsOnly = false
+    
     var body: some View {
         List(selection: $selection) {
             // Main navigation section
             Section("Navigation") {
                 ForEach(NavigationItem.allCases.filter { $0.isMainSection }) { item in
                     NavigationLink(value: item) {
-                        Label(item.rawValue, systemImage: item.systemImage)
+                        sidebarLabel(for: item)
                     }
                 }
             }
@@ -27,20 +30,31 @@ struct SidebarView: View {
             // Settings section at bottom
             Section {
                 NavigationLink(value: NavigationItem.settings) {
-                    Label(NavigationItem.settings.rawValue, systemImage: NavigationItem.settings.systemImage)
+                    sidebarLabel(for: NavigationItem.settings)
                 }
             }
         }
         .listStyle(.sidebar)
         .navigationSplitViewColumnWidth(
-            min: Constants.sidebarMinWidth,
-            ideal: Constants.sidebarIdealWidth,
-            max: Constants.sidebarMaxWidth
+            min: sidebarIconsOnly ? 60 : Constants.sidebarMinWidth,
+            ideal: sidebarIconsOnly ? 80 : Constants.sidebarIdealWidth,
+            max: sidebarIconsOnly ? 100 : Constants.sidebarMaxWidth
         )
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 ConnectionStatusBadge(status: connectionService.status)
             }
+        }
+    }
+    
+    /// Create sidebar label with conditional icon-only mode
+    @ViewBuilder
+    private func sidebarLabel(for item: NavigationItem) -> some View {
+        if sidebarIconsOnly {
+            Image(systemName: item.systemImage)
+                .help(item.rawValue) // Show tooltip on hover
+        } else {
+            Label(item.rawValue, systemImage: item.systemImage)
         }
     }
 }

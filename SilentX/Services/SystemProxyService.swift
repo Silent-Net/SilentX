@@ -44,7 +44,13 @@ final class SystemProxyService: SystemProxyServiceProtocol {
         try networkServices.forEach { service in
             let current = try readCurrentState(service: service)
             snapshot = current
+            
+            // Set HTTP proxy
             try setProxy(service: service, host: host, port: port, enable: true)
+            // Set HTTPS proxy
+            try setProxy(service: service, host: host, port: port, enable: true, secure: true)
+            // Set SOCKS proxy to the same port (mixed inbound handles all)
+            try setSOCKSProxy(service: service, host: host, port: port, enable: true)
         }
     }
     
@@ -99,6 +105,15 @@ final class SystemProxyService: SystemProxyServiceProtocol {
             _ = try runNetworkSetup(args: [stateCmd, service, "on"])
         } else {
             _ = try runNetworkSetup(args: [stateCmd, service, "off"])
+        }
+    }
+    
+    private func setSOCKSProxy(service: String, host: String, port: Int, enable: Bool) throws {
+        if enable {
+            _ = try runNetworkSetup(args: ["-setsocksfirewallproxy", service, host, String(port)])
+            _ = try runNetworkSetup(args: ["-setsocksfirewallproxystate", service, "on"])
+        } else {
+            _ = try runNetworkSetup(args: ["-setsocksfirewallproxystate", service, "off"])
         }
     }
     

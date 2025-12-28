@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 /// View for appearance and UI customization settings
 struct AppearanceSettingsView: View {
@@ -35,6 +38,12 @@ struct AppearanceSettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: colorScheme) { _, newScheme in
+                    // Apply immediately for instant, smooth switching
+                    #if os(macOS)
+                    NSApp.appearance = newScheme.nsAppearance
+                    #endif
+                }
                 
                 Picker("Accent Color", selection: $accentColor) {
                     ForEach(AppAccentColor.allCases, id: \.self) { color in
@@ -163,6 +172,26 @@ enum AppColorScheme: String, CaseIterable {
         case .dark: return "Dark"
         }
     }
+    
+    /// Convert to SwiftUI ColorScheme for preferredColorScheme modifier
+    var colorSchemeValue: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+    
+    #if os(macOS)
+    /// Convert to NSAppearance for macOS app-wide appearance
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: return nil // nil = follow system setting
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+    #endif
 }
 
 /// Application accent color options

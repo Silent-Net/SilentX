@@ -13,26 +13,24 @@ struct NodeRowView: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Protocol icon
-            protocolIcon
-            
             // Node info
             VStack(alignment: .leading, spacing: 4) {
                 Text(node.name)
                     .font(.headline)
                 
-                HStack(spacing: 8) {
-                    // Server address
+                // Server address and protocol type
+                HStack(spacing: 6) {
+                    Text(node.protocolType.rawValue.uppercased())
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                    
+                    Text("·")
+                        .foregroundStyle(.tertiary)
+                    
                     Text("\(node.server):\(node.port)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    
-                    // TLS indicator
-                    if node.tls {
-                        Image(systemName: "lock.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.green)
-                    }
                 }
             }
             
@@ -42,18 +40,6 @@ struct NodeRowView: View {
             latencyView
         }
         .padding(.vertical, 4)
-    }
-    
-    private var protocolIcon: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(node.protocolType.color.opacity(0.2))
-                .frame(width: 40, height: 40)
-            
-            Text(node.protocolType.shortName)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(node.protocolType.color)
-        }
     }
     
     @ViewBuilder

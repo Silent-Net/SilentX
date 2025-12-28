@@ -6,6 +6,10 @@
 //
 
 import SwiftUI
+import ServiceManagement
+#if os(macOS)
+import AppKit
+#endif
 
 /// View for general application settings
 struct GeneralSettingsView: View {
@@ -28,6 +32,10 @@ struct GeneralSettingsView: View {
     @AppStorage("notifyOnConnect") private var notifyOnConnect = true
     @AppStorage("notifyOnDisconnect") private var notifyOnDisconnect = true
     @AppStorage("notifyOnError") private var notifyOnError = true
+    
+    // Alert states
+    @State private var showResetConfirmation = false
+    @State private var showResetSuccess = false
     
     var body: some View {
         Form {
@@ -71,7 +79,12 @@ struct GeneralSettingsView: View {
                 Toggle("Hide window on close (keep in menu bar)", isOn: $hideOnClose)
                     .disabled(!showInMenuBar)
                 
-                Toggle("Launch at login", isOn: $launchAtLogin)
+                Toggle("Launch at login", isOn: Binding(
+                    get: { launchAtLogin },
+                    set: { newValue in
+                        setLaunchAtLogin(enabled: newValue)
+                    }
+                ))
             } header: {
                 Label("Behavior", systemImage: "rectangle.on.rectangle")
             }
@@ -90,13 +103,13 @@ struct GeneralSettingsView: View {
             // Data Management Section
             Section {
                 Button {
-                    // Open data folder in Finder
+                    openDataFolder()
                 } label: {
                     Label("Open Data Folder in Finder", systemImage: "folder")
                 }
                 
                 Button(role: .destructive) {
-                    // Reset all settings
+                    showResetConfirmation = true
                 } label: {
                     Label("Reset All Settings", systemImage: "arrow.counterclockwise")
                 }
@@ -106,6 +119,96 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+        .onAppear {
+            // Sync launch at login state with actual system state
+            syncLaunchAtLoginState()
+        }
+        .alert("Reset All Settings", isPresented: $showResetConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset", role: .destructive) {
+                resetAllSettings()
+            }
+        } message: {
+            Text("This will reset all settings to their default values. This action cannot be undone.")
+        }
+        .alert("Settings Reset", isPresented: $showResetSuccess) {
+            Button("OK") { }
+        } message: {
+            Text("All settings have been reset to their default values.")
+        }
+    }
+    
+    // MARK: - Private Methods
+    
+    /// Open the application data folder in Finder
+    private func openDataFolder() {
+        #if os(macOS)
+        NSWorkspace.shared.open(FilePath.applicationSupport)
+        #endif
+    }
+    
+    /// Reset all @AppStorage settings to defaults
+    private func resetAllSettings() {
+        // List of all @AppStorage keys used in the app
+        let keysToReset = [
+            "autoConnectOnLaunch",
+            "autoReconnectOnDisconnect",
+            "reconnectDelay",
+            "autoCheckForUpdates",
+            "autoDownloadUpdates",
+            "includePrereleases",
+            "showInMenuBar",
+            "hideOnClose",
+            "launchAtLogin",
+            "notifyOnConnect",
+            "notifyOnDisconnect",
+            "notifyOnError",
+            "colorScheme",
+            "accentColor",
+            "sidebarIconsOnly",
+            "showConnectionStats",
+            "dashboardStyle",
+            "showSpeedGraph",
+            "logFontSize",
+            "logColorCoding",
+            "selectedProfileID",
+            "hasCompletedOnboarding"
+        ]
+        
+        for key in keysToReset {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        
+        // Disable launch at login when resetting
+        setLaunchAtLogin(enabled: false)
+        
+        showResetSuccess = true
+    }
+    
+    /// Set or unset launch at login via SMAppService
+    private func setLaunchAtLogin(enabled: Bool) {
+        #if os(macOS)
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            launchAtLogin = enabled
+        } catch {
+            // Registration may fail in unsigned/development builds
+            print("Failed to \(enabled ? "register" : "unregister") launch at login: \(error)")
+            // Revert UI state
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
+        #endif
+    }
+    
+    /// Sync the toggle state with the actual system state
+    private func syncLaunchAtLoginState() {
+        #if os(macOS)
+        launchAtLogin = SMAppService.mainApp.status == .enabled
+        #endif
     }
 }
 

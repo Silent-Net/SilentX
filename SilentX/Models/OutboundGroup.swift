@@ -98,7 +98,7 @@ struct OutboundGroupItem: Identifiable, Hashable {
     /// Formatted delay text
     var delayText: String {
         guard let delay else { return "" }
-        if delay <= 0 { return "超时" }
+        if delay <= 0 { return "Timeout" }
         return "\(delay)ms"
     }
     

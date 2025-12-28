@@ -84,14 +84,14 @@ final class LocalProcessEngine: ProxyEngine {
             activeTunInterfaces = tunInterfaces
             cleanupStaleCacheDB(configPath: config.configPath)
 
-            // === 强制彻底释放所有配置中指定的utun接口 ===
+            // === Force release all TUN interfaces specified in config ===
             if !tunInterfaces.isEmpty {
                 for utun in tunInterfaces {
                     logger.info("[TUN FORCE RELEASE] Checking if utun interface \(utun) is present before launch...")
                     if isInterfacePresent(utun) {
                         logger.warning("[TUN FORCE RELEASE] utun interface \(utun) is present, attempting to kill ALL occupying processes (not just sing-box)...")
                         try await forceKillAllProcessesOccupyingUtun(utun)
-                        // 等待接口释放
+                        // Wait for interface release
                         let maxWait = Date().addingTimeInterval(5.0)
                         while isInterfacePresent(utun) && Date() < maxWait {
                             logger.info("[TUN FORCE RELEASE] Waiting for utun interface \(utun) to be released...")
@@ -99,7 +99,7 @@ final class LocalProcessEngine: ProxyEngine {
                         }
                         if isInterfacePresent(utun) {
                             logger.error("[TUN FORCE RELEASE] utun interface \(utun) still present after force cleanup, aborting startup!")
-                            throw ProxyError.coreStartFailed("utun接口 \(utun) 被其他进程占用，无法释放 (已尝试强制kill)")
+                            throw ProxyError.coreStartFailed("utun interface \(utun) is occupied by another process and cannot be released (force kill attempted)")
                         } else {
                             logger.info("[TUN FORCE RELEASE] utun interface \(utun) released successfully.")
                         }
@@ -130,20 +130,20 @@ final class LocalProcessEngine: ProxyEngine {
             logger.debug("Waiting for core to be ready (timeout: 30s)...")
             try await waitForCoreReady(ports: ports, timeout: 30.0)
 
-            // 7. 启动后检测TUN是否up和路由生效
+            // 7. Post-startup: verify TUN is up and routes are effective
             if !tunInterfaces.isEmpty {
                 for utun in tunInterfaces {
                     let up = isInterfacePresent(utun)
                     logger.info("[TUN CHECK] utun \(utun) present after start: \(up)")
                     if !up {
-                        throw ProxyError.coreStartFailed("TUN接口 \(utun) 启动后未检测到，TUN未生效")
+                        throw ProxyError.coreStartFailed("TUN interface \(utun) not detected after startup, TUN not effective")
                     }
-                    // 检查路由表是否有utun
+                    // Check if routing table has utun
                     if !isDefaultRouteViaUtun(utun) {
-                        logger.warning("[TUN CHECK] 默认路由未指向 \(utun)，TUN未生效")
-                        // 这里不直接报错，提示即可
+                        logger.warning("[TUN CHECK] Default route not pointing to \(utun), TUN may not be effective")
+                        // Don't error here, just warn
                     } else {
-                        logger.info("[TUN CHECK] 默认路由已指向 \(utun)，TUN生效")
+                        logger.info("[TUN CHECK] Default route points to \(utun), TUN is effective")
                     }
                 }
             }
@@ -172,7 +172,7 @@ final class LocalProcessEngine: ProxyEngine {
         }
     }
 
-    /// 强制kill所有占用指定utun接口的进程（不管是不是sing-box）
+    /// Force kill all processes occupying the specified utun interface (not just sing-box)
     private func forceKillAllProcessesOccupyingUtun(_ utun: String) async throws {
         logger.info("[TUN FORCE RELEASE] lsof -n | grep \(utun)")
         let shellCmd = "lsof -n | grep \(utun)"
@@ -202,7 +202,7 @@ final class LocalProcessEngine: ProxyEngine {
                 killedPids.insert(pid)
             }
         }
-        // 保险起见，再killall sing-box
+        // Fallback: killall sing-box as safety measure
         let killall = Process()
         killall.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
         killall.arguments = ["killall", "-KILL", "sing-box"]
@@ -213,7 +213,7 @@ final class LocalProcessEngine: ProxyEngine {
         logger.info("[TUN FORCE RELEASE] killall -KILL sing-box issued for utun cleanup.")
     }
 
-    /// 检查默认路由是否指向utun（TUN生效检测）
+    /// Check if default route points to utun (TUN effectiveness check)
     private func isDefaultRouteViaUtun(_ utun: String) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/sbin/route")
@@ -234,13 +234,13 @@ final class LocalProcessEngine: ProxyEngine {
         return false
     }
 
-    /// 杀掉所有占用指定utun接口的进程（需要sudo权限）
+    /// Kill all processes occupying the specified utun interface (requires sudo)
     private func killProcessesOccupyingUtun(_ utun: String) async throws {
         logger.info("Finding processes occupying utun: \(utun)")
-        // 1. 用lsof查找所有占用该utun的进程
+        // 1. Use lsof to find all processes occupying this utun
         let lsofCmd = "/usr/sbin/lsof"
         let args = ["-n", "|", "/usr/bin/grep", utun]
-        // 由于lsof -n | grep utun005 不能直接用Process拼接管道，这里用shell
+        // Cannot pipe directly with Process, use shell
         let shellCmd = "lsof -n | grep \(utun)"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -255,7 +255,7 @@ final class LocalProcessEngine: ProxyEngine {
         let lines = output.split(separator: "\n")
         var killedPids = Set<Int32>()
         for line in lines {
-            // lsof输出格式: COMMAND   PID ...
+            // lsof output format: COMMAND   PID ...
             let parts = line.split(separator: " ", omittingEmptySubsequences: true)
             if parts.count > 1, let pid = Int32(parts[1]) {
                 if killedPids.contains(pid) { continue }
@@ -269,7 +269,7 @@ final class LocalProcessEngine: ProxyEngine {
                 killedPids.insert(pid)
             }
         }
-        // 2. 保险起见，再killall sing-box
+        // 2. Fallback: killall sing-box as safety measure
         let killall = Process()
         killall.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
         killall.arguments = ["killall", "-TERM", "sing-box"]
@@ -409,8 +409,81 @@ final class LocalProcessEngine: ProxyEngine {
             }
         }
 
+        // AGGRESSIVE PORT CLEANUP: Kill processes using conflicting ports
         if !conflictingPorts.isEmpty {
-            throw ProxyError.portConflict(conflictingPorts)
+            logger.warning("Ports in use: \(conflictingPorts.map(String.init).joined(separator: ", ")) - attempting to kill occupying processes")
+            
+            for port in conflictingPorts {
+                await killProcessesOnPort(port)
+            }
+            
+            // Wait briefly for ports to be released
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+            
+            // Re-check ports
+            var stillConflicting: [Int] = []
+            for port in conflictingPorts {
+                if isPortInUse(port) {
+                    stillConflicting.append(port)
+                }
+            }
+            
+            if !stillConflicting.isEmpty {
+                throw ProxyError.portConflict(stillConflicting)
+            }
+            
+            logger.info("Successfully released ports: \(conflictingPorts.map(String.init).joined(separator: ", "))")
+        }
+    }
+    
+    /// Kill all processes using a specific port
+    private func killProcessesOnPort(_ port: Int) async {
+        logger.info("[PORT CLEANUP] Killing processes on port \(port)")
+        
+        // Use lsof to find PIDs using the port
+        let lsof = Process()
+        lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        lsof.arguments = ["-i", ":\(port)", "-t"]  // -t outputs only PIDs
+        
+        let pipe = Pipe()
+        lsof.standardOutput = pipe
+        lsof.standardError = FileHandle.nullDevice
+        
+        do {
+            try lsof.run()
+            lsof.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            
+            let pids = output.split(separator: "\n")
+                .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
+            
+            if pids.isEmpty {
+                logger.debug("[PORT CLEANUP] No process found on port \(port)")
+                return
+            }
+            
+            logger.info("[PORT CLEANUP] Found PIDs on port \(port): \(pids.map(String.init).joined(separator: ", "))")
+            
+            for pid in pids {
+                logger.info("[PORT CLEANUP] Sending SIGKILL to PID \(pid)")
+                kill(pid, SIGKILL)
+            }
+        } catch {
+            logger.warning("[PORT CLEANUP] lsof failed: \(error.localizedDescription)")
+        }
+        
+        // Also kill common proxy processes as backup
+        let proxyProcesses = ["sing-box", "clash", "v2ray", "xray", "trojan-go"]
+        for processName in proxyProcesses {
+            let killall = Process()
+            killall.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+            killall.arguments = ["-9", processName]
+            killall.standardOutput = FileHandle.nullDevice
+            killall.standardError = FileHandle.nullDevice
+            try? killall.run()
+            killall.waitUntilExit()
         }
     }
 

@@ -114,17 +114,11 @@ final class PrivilegedHelperEngine: ProxyEngine {
             )
             logger.info("Service started sing-box with PID \(pid)")
             
-            // Wait briefly for core to be ready
-            try await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+            // Trust service response - no delay needed
+            // If start command succeeded, core is running
             
-            // Verify service reports running state
-            let serviceStatus = try await ipcClient.status()
-            guard serviceStatus.isRunning else {
-                throw ProxyError.coreStartFailed("Service reports core is not running after start")
-            }
-            
-            // Update to connected status
-            connectedStartTime = serviceStatus.startTime ?? Date()
+            // Update to connected status immediately
+            connectedStartTime = Date()
             let info = ConnectionInfo(
                 engineType: engineType,
                 startTime: connectedStartTime!,
@@ -134,10 +128,36 @@ final class PrivilegedHelperEngine: ProxyEngine {
             statusSubject.send(.connected(info))
             logger.info("Successfully connected via privileged helper service")
             
-            // Start status polling
+            // Start status polling (will verify in background)
             startPolling()
             
         } catch let error as IPCClientError {
+            // T073: Core already running is not an error - sync state instead
+            if case .serverError(let code, _) = error,
+               code == IPCErrorCode.coreAlreadyRunning.rawValue {
+                logger.info("Core is already running - syncing state")
+                
+                // Get current status and sync
+                do {
+                    let serviceStatus = try await ipcClient.status()
+                    if serviceStatus.isRunning {
+                        connectedStartTime = serviceStatus.startTime ?? Date()
+                        let info = ConnectionInfo(
+                            engineType: engineType,
+                            startTime: connectedStartTime!,
+                            configName: currentConfigName ?? "config.json",
+                            listenPorts: cachedPorts
+                        )
+                        statusSubject.send(.connected(info))
+                        startPolling()
+                        logger.info("Synced state - core was already running")
+                        return // Success - core was already running
+                    }
+                } catch {
+                    logger.warning("Failed to sync state after core already running: \(error.localizedDescription)")
+                }
+            }
+            
             logger.error("IPC error during start: \(error.localizedDescription)")
             let proxyError = mapIPCError(error)
             statusSubject.send(.error(proxyError))

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 import Combine
 import SwiftData
 import Darwin.POSIX.net
@@ -41,12 +42,82 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let coreVersionService: any CoreVersionServiceProtocol
     private var activeRuntimeConfigURL: URL?
+    private var reconnectTask: Task<Void, Never>?
+    
+    // MARK: - Settings (Auto-Reconnect)
+    
+    @AppStorage("autoReconnectOnDisconnect") private var autoReconnectOnDisconnect = true
+    @AppStorage("reconnectDelay") private var reconnectDelay = 5.0
 
     // MARK: - Public Accessors
     
     /// Active config file path (for Groups panel to parse)
     var activeConfigPath: URL? {
         activeRuntimeConfigURL
+    }
+    
+    // MARK: - Proxy Mode & System Proxy
+    
+    /// Current proxy mode (rule/global/direct)
+    @Published var proxyMode: String = "rule"
+    
+    /// HTTP proxy port from active config
+    var httpPort: Int? {
+        // Parse from active config or return default
+        guard let configURL = activeRuntimeConfigURL,
+              let data = try? Data(contentsOf: configURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let inbounds = json["inbounds"] as? [[String: Any]] else {
+            return nil
+        }
+        
+        for inbound in inbounds {
+            if let type = inbound["type"] as? String,
+               (type == "http" || type == "mixed"),
+               let port = inbound["listen_port"] as? Int {
+                return port
+            }
+        }
+        return nil
+    }
+    
+    /// SOCKS proxy port from active config
+    var socksPort: Int? {
+        guard let configURL = activeRuntimeConfigURL,
+              let data = try? Data(contentsOf: configURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let inbounds = json["inbounds"] as? [[String: Any]] else {
+            return nil
+        }
+        
+        for inbound in inbounds {
+            if let type = inbound["type"] as? String,
+               (type == "socks" || type == "mixed"),
+               let port = inbound["listen_port"] as? Int {
+                return port
+            }
+        }
+        return nil
+    }
+    
+    /// Whether system HTTP proxy is enabled (stub - needs networksetup integration)
+    var isSystemHttpProxyEnabled: Bool { false }
+    
+    /// Whether system SOCKS proxy is enabled (stub - needs networksetup integration)
+    var isSystemSocksProxyEnabled: Bool { false }
+    
+    /// Set system proxy settings
+    func setSystemProxy(httpEnabled: Bool, socksEnabled: Bool) async throws {
+        // TODO: Implement using networksetup command
+        // networksetup -setwebproxy Wi-Fi 127.0.0.1 7890
+        // networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 7891
+    }
+    
+    /// Change proxy mode via Clash API
+    func setProxyMode(_ mode: String) async throws {
+        proxyMode = mode
+        // Call Clash API to change mode
+        try await ClashAPIClient.shared.setMode(mode)
     }
 
     // MARK: - Initialization
@@ -87,7 +158,7 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         engine.statusPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] newStatus in
-                self?.status = newStatus
+                self?.handleStatusChange(newStatus)
             }
             .store(in: &cancellables)
 
@@ -133,27 +204,10 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         let coreURL = try resolveCoreBinary()
         print("Core binary URL: \(coreURL.path)")
 
-        // Preflight: match terminal behavior (run/check equivalence) and surface full errors to UI.
-        // This runs without sudo; it should still validate config syntax/resources in most cases.
-        print("Running preflight check...")
-        do {
-            try await preflightSingBoxCheck(coreURL: coreURL, configURL: runtimeConfigURL)
-            print("Preflight check PASSED")
-        } catch let proxyError as ProxyError {
-            print("Preflight check FAILED: \(proxyError)")
-            status = .error(proxyError)
-            // Engine never started; tear down subscription and engine reference.
-            currentEngine = nil
-            cancellables.removeAll()
-            throw proxyError
-        } catch {
-            print("Preflight check FAILED: \(error)")
-            let proxyError = ProxyError.configInvalid("sing-box check failed: \(error.localizedDescription)")
-            status = .error(proxyError)
-            currentEngine = nil
-            cancellables.removeAll()
-            throw proxyError
-        }
+        // Skip preflight check for instant connect (SFM-like behavior)
+        // The service will report errors if config is invalid
+        // Preflight was adding 1-2 seconds of delay
+        print("Skipping preflight check for instant connect")
 
         let config = ProxyConfiguration(
             profileId: profile.id,
@@ -192,6 +246,8 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         currentEngine = nil
         cancellables.removeAll()
         activeRuntimeConfigURL = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
     }
 
     func restart() async throws {
@@ -202,6 +258,54 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
             try await connect(profile: profile)
         } else {
             throw ConnectionError.noActiveProfile
+        }
+    }
+    
+    // MARK: - Status Handling
+    
+    /// Handle status changes from engine, including auto-reconnect logic
+    private func handleStatusChange(_ newStatus: ConnectionStatus) {
+        let previousStatus = status
+        status = newStatus
+        
+        // Check for unexpected disconnection (was connected, now disconnected/error)
+        switch (previousStatus, newStatus) {
+        case (.connected, .disconnected), (.connected, .error):
+            // Connection dropped unexpectedly - attempt reconnect if enabled
+            if autoReconnectOnDisconnect, let profile = lastProfile {
+                scheduleReconnect(profile: profile)
+            }
+        default:
+            break
+        }
+    }
+    
+    /// Schedule a reconnection attempt after the configured delay
+    private func scheduleReconnect(profile: Profile) {
+        // Cancel any existing reconnect task
+        reconnectTask?.cancel()
+        
+        let delaySeconds = reconnectDelay
+        
+        reconnectTask = Task { [weak self] in
+            // Wait for the configured delay
+            if delaySeconds > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            }
+            
+            // Check if task was cancelled or we're already reconnecting
+            guard !Task.isCancelled else { return }
+            guard let self = self else { return }
+            
+            // Only attempt reconnect if still disconnected
+            guard case .disconnected = self.status else { return }
+            
+            do {
+                try await self.connect(profile: profile)
+            } catch {
+                // Reconnect failed - could retry again, but for now just log
+                print("Auto-reconnect failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -513,8 +617,8 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         return configJSON
     }
     
-    /// Remove hardcoded interface_name from TUN inbounds
-    /// This is the ONLY modification we make - lets sing-box auto-select available utun
+    /// Prepare TUN config: remove interface_name, ensure sniff is enabled
+    /// sniff is REQUIRED for proper DNS hijacking to work
     private func clearTunInterfaceName(_ configJSON: String) -> String {
         guard let data = configJSON.data(using: .utf8),
               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -525,9 +629,26 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         var modified = false
         for i in 0..<inbounds.count {
             guard (inbounds[i]["type"] as? String) == "tun" else { continue }
+            
+            // Remove interface_name to let sing-box auto-select
             if inbounds[i]["interface_name"] != nil {
                 inbounds[i].removeValue(forKey: "interface_name")
                 modified = true
+            }
+            
+            // CRITICAL: Enable sniff for proper DNS resolution
+            // Without this, DNS hijacking doesn't work correctly
+            if inbounds[i]["sniff"] == nil || (inbounds[i]["sniff"] as? Bool) != true {
+                inbounds[i]["sniff"] = true
+                modified = true
+                print("[Config] Enabled sniff=true for TUN (required for DNS)")
+            }
+            
+            // Enable sniff_override_destination for FakeIP/DNS to work
+            if inbounds[i]["sniff_override_destination"] == nil || (inbounds[i]["sniff_override_destination"] as? Bool) != true {
+                inbounds[i]["sniff_override_destination"] = true
+                modified = true
+                print("[Config] Enabled sniff_override_destination=true for TUN")
             }
         }
         

@@ -20,7 +20,7 @@ struct ServiceStatusView: View {
                 .frame(width: 10, height: 10)
             
             VStack(alignment: .leading, spacing: 2) {
-                Text("后台服务")
+                Text("Background Service")
                     .font(.subheadline)
                     .foregroundColor(.primary)
                 
@@ -83,7 +83,7 @@ struct ServiceStatusDetailView: View {
                                 ProgressView()
                                     .scaleEffect(0.7)
                             }
-                            Text("安装服务")
+                            Text("Install Service")
                         }
                     }
                     .disabled(viewModel.isInstalling || viewModel.isUninstalling)
@@ -97,7 +97,7 @@ struct ServiceStatusDetailView: View {
                                 ProgressView()
                                     .scaleEffect(0.7)
                             }
-                            Text("重新安装")
+                            Text("Reinstall")
                         }
                     }
                     .disabled(viewModel.isInstalling || viewModel.isUninstalling)
@@ -111,7 +111,7 @@ struct ServiceStatusDetailView: View {
                                 ProgressView()
                                     .scaleEffect(0.7)
                             }
-                            Text("卸载服务")
+                            Text("Uninstall Service")
                         }
                     }
                     .disabled(viewModel.isInstalling || viewModel.isUninstalling)
@@ -126,13 +126,13 @@ struct ServiceStatusDetailView: View {
                     .padding(.top, 4)
             }
         }
-        .alert("确认卸载", isPresented: $viewModel.showUninstallConfirmation) {
-            Button("取消", role: .cancel) { }
-            Button("卸载", role: .destructive) {
+        .alert("Confirm Uninstall", isPresented: $viewModel.showUninstallConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Uninstall", role: .destructive) {
                 Task { await viewModel.uninstall() }
             }
         } message: {
-            Text("卸载后台服务后，每次连接代理都需要输入管理员密码。")
+            Text("After uninstalling the background service, you will need to enter admin password for each proxy connection.")
         }
         .onAppear {
             viewModel.startStatusRefresh()

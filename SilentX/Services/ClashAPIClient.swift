@@ -24,17 +24,17 @@ actor ClashAPIClient {
         var errorDescription: String? {
             switch self {
             case .notConnected:
-                return "代理未连接"
+                return "Proxy not connected"
             case .invalidURL:
-                return "无效的 API 地址"
+                return "Invalid API URL"
             case .networkError(let error):
-                return "网络错误: \(error.localizedDescription)"
+                return "Network error: \(error.localizedDescription)"
             case .invalidResponse:
-                return "无效的响应"
+                return "Invalid response"
             case .apiError(let message):
-                return "API 错误: \(message)"
+                return "API error: \(message)"
             case .timeout:
-                return "请求超时"
+                return "Request timeout"
             }
         }
     }
@@ -45,7 +45,7 @@ actor ClashAPIClient {
     private let session: URLSession
     private var baseURL: URL?
     
-    /// Default Clash API port
+    /// Default Clash API port (matches sing-box default)
     static let defaultPort = 9099
     
     // MARK: - Singleton
@@ -307,6 +307,76 @@ actor ClashAPIClient {
                 results[proxy] = delay
             }
             return results
+        }
+    }
+    
+    /// Change proxy mode (rule/global/direct)
+    func setMode(_ mode: String) async throws {
+        guard let baseURL else {
+            throw ClashAPIError.notConnected
+        }
+        
+        let url = baseURL.appendingPathComponent("configs")
+        logger.debug("PATCH \(url.absoluteString) mode=\(mode)")
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body = ["mode": mode]
+        request.httpBody = try? JSONEncoder().encode(body)
+        
+        do {
+            let (_, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw ClashAPIError.invalidResponse
+            }
+            
+            guard (200...299).contains(httpResponse.statusCode) else {
+                throw ClashAPIError.apiError("Failed to set mode: HTTP \(httpResponse.statusCode)")
+            }
+            
+            logger.info("Mode changed to: \(mode)")
+            
+        } catch let error as ClashAPIError {
+            throw error
+        } catch {
+            throw ClashAPIError.networkError(error)
+        }
+    }
+    
+    /// Get current mode
+    func getMode() async throws -> String {
+        guard let baseURL else {
+            throw ClashAPIError.notConnected
+        }
+        
+        let url = baseURL.appendingPathComponent("configs")
+        logger.debug("GET \(url.absoluteString)")
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        
+        do {
+            let (data, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else {
+                throw ClashAPIError.invalidResponse
+            }
+            
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let mode = json["mode"] as? String {
+                return mode
+            }
+            
+            return "rule" // Default
+            
+        } catch let error as ClashAPIError {
+            throw error
+        } catch {
+            throw ClashAPIError.networkError(error)
         }
     }
 }
