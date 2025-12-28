@@ -62,7 +62,7 @@ Thumbs.db
 
 # Logs
 *.log
-logs/
+/logs/
 
 # Archives
 *.ipa
