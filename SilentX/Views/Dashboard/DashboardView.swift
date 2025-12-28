@@ -81,6 +81,12 @@ struct DashboardView: View {
             if let profile = newValue {
                 selectedProfileID = profile.id.uuidString
                 
+                // Sync isSelected flag for Profiles page (bidirectional sync)
+                for p in allProfiles {
+                    p.isSelected = (p.id == profile.id)
+                }
+                try? modelContext.save()
+                
                 // Instant switch: if connected and profile changed, restart with new profile immediately
                 if oldValue != nil && oldValue?.id != profile.id {
                     if case .connected = connectionService.status {
@@ -89,6 +95,16 @@ struct DashboardView: View {
                         }
                     }
                 }
+            }
+        }
+        .onChange(of: selectedProfileID) { _, newID in
+            // Sync when selectedProfileID is changed externally (e.g. from ProfileListView)
+            guard !newID.isEmpty,
+                  let uuid = UUID(uuidString: newID),
+                  selectedProfile?.id != uuid else { return }
+            
+            if let profile = allProfiles.first(where: { $0.id == uuid }) {
+                selectedProfile = profile
             }
         }
     }

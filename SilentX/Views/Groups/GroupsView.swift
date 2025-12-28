@@ -141,10 +141,9 @@ struct GroupsView: View {
     private func loadIfNeeded() async {
         guard isConnected else { return }
         
-        // Configure Clash API with port and active config path
-        // Config path is used to parse groups in correct order
+        // ClashAPIClient is already configured with correct port by ConnectionService.connect()
+        // Just pass the config path for parsing groups in correct order
         await viewModel.configure(
-            port: ClashAPIClient.defaultPort,
             configPath: connectionService.activeConfigPath
         )
     }
@@ -152,8 +151,8 @@ struct GroupsView: View {
     private func handleConnectionChange(_ status: ConnectionStatus) async {
         switch status {
         case .connected:
+            // ClashAPIClient already configured by ConnectionService
             await viewModel.configure(
-                port: ClashAPIClient.defaultPort,
                 configPath: connectionService.activeConfigPath
             )
         case .disconnected, .error:

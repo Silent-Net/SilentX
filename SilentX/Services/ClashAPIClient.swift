@@ -45,8 +45,8 @@ actor ClashAPIClient {
     private let session: URLSession
     private var baseURL: URL?
     
-    /// Default Clash API port (matches sing-box default)
-    static let defaultPort = 9099
+    // NOTE: No default port - must be configured from profile config
+    // via ConnectionService.connect() which reads external_controller
     
     // MARK: - Singleton
     

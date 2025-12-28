@@ -118,7 +118,7 @@ struct ConnectButton: View {
         engineType: .localProcess,
         startTime: Date(),
         configName: "Preview",
-        listenPorts: [2080]
+        listenPorts: [PreviewData.previewPort]
     )
     return ConnectButton(status: .connected(info)) {}
         .padding()

@@ -199,6 +199,22 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
                     print("TUN interface_name in config: \(ifName)")
                 }
             }
+            
+            // Configure ClashAPIClient with port from config
+            if let experimental = json["experimental"] as? [String: Any],
+               let clashApi = experimental["clash_api"] as? [String: Any],
+               let controller = clashApi["external_controller"] as? String {
+                // Parse port from "127.0.0.1:9099" format
+                let parts = controller.split(separator: ":")
+                if parts.count == 2, let port = Int(parts[1]) {
+                    print("[Config] Configuring ClashAPIClient with port \(port) from config")
+                    await ClashAPIClient.shared.configure(port: port)
+                } else {
+                    print("[Config] WARNING: Failed to parse Clash API port from '\(controller)'")
+                }
+            } else {
+                print("[Config] WARNING: No clash_api.external_controller in config - Groups panel will not work")
+            }
         }
 
         let coreURL = try resolveCoreBinary()
@@ -591,12 +607,25 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
             // TUN was removed, make sure we have a mixed inbound
             let hasMixed = inbounds.contains { ($0["type"] as? String) == "mixed" }
             if !hasMixed {
-                // Add mixed inbound with default port
+                // Find port from removed TUN's platform.http_proxy or from json backup
+                var mixedPort: Int?
+                if let originalInbounds = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["inbounds"] as? [[String: Any]] {
+                    for inbound in originalInbounds where inbound["type"] as? String == "tun" {
+                        if let platform = inbound["platform"] as? [String: Any],
+                           let httpProxy = platform["http_proxy"] as? [String: Any],
+                           let port = httpProxy["server_port"] as? Int {
+                            mixedPort = port
+                            break
+                        }
+                    }
+                }
+                
+                // Add mixed inbound with port from config
                 let mixedInbound: [String: Any] = [
                     "type": "mixed",
                     "tag": "mixed-in",
                     "listen": "127.0.0.1",
-                    "listen_port": 2088,
+                    "listen_port": mixedPort ?? 2080,  // fallback only if not found
                     "sniff": true,
                     "sniff_override_destination": false,
                     "set_system_proxy": false
@@ -617,8 +646,7 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         return configJSON
     }
     
-    /// Prepare TUN config: remove interface_name, ensure sniff is enabled
-    /// sniff is REQUIRED for proper DNS hijacking to work
+    /// Prepare TUN config: remove interface_name to let sing-box auto-select
     private func clearTunInterfaceName(_ configJSON: String) -> String {
         guard let data = configJSON.data(using: .utf8),
               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -634,21 +662,6 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
             if inbounds[i]["interface_name"] != nil {
                 inbounds[i].removeValue(forKey: "interface_name")
                 modified = true
-            }
-            
-            // CRITICAL: Enable sniff for proper DNS resolution
-            // Without this, DNS hijacking doesn't work correctly
-            if inbounds[i]["sniff"] == nil || (inbounds[i]["sniff"] as? Bool) != true {
-                inbounds[i]["sniff"] = true
-                modified = true
-                print("[Config] Enabled sniff=true for TUN (required for DNS)")
-            }
-            
-            // Enable sniff_override_destination for FakeIP/DNS to work
-            if inbounds[i]["sniff_override_destination"] == nil || (inbounds[i]["sniff_override_destination"] as? Bool) != true {
-                inbounds[i]["sniff_override_destination"] = true
-                modified = true
-                print("[Config] Enabled sniff_override_destination=true for TUN")
             }
         }
         

@@ -266,7 +266,7 @@ struct StatusIndicator: View {
         engineType: .localProcess,
         startTime: Date().addingTimeInterval(-3665),
         configName: "Preview",
-        listenPorts: [2080]
+        listenPorts: [PreviewData.previewPort]
     )
     return ConnectionStatusView(status: .connected(info))
         .padding()

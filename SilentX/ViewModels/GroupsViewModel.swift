@@ -44,19 +44,10 @@ final class GroupsViewModel {
     
     // MARK: - Configuration
     
-    /// Configure with Clash API port and active config path
-    func configure(port: Int, configPath: URL?) async {
-        await clashAPI.configure(port: port)
+    /// Configure with active config path
+    /// Note: ClashAPIClient is already configured with correct port by ConnectionService.connect()
+    func configure(configPath: URL?) async {
         activeConfigPath = configPath
-        isAvailable = await clashAPI.isAvailable()
-        if isAvailable {
-            await loadGroups()
-        }
-    }
-    
-    /// Configure Clash API port (legacy)
-    func configure(port: Int) async {
-        await clashAPI.configure(port: port)
         isAvailable = await clashAPI.isAvailable()
         if isAvailable {
             await loadGroups()

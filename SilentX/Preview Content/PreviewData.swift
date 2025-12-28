@@ -11,6 +11,9 @@ import SwiftData
 /// Container for preview sample data
 enum PreviewData {
     
+    // Preview port - not used in production, just for SwiftUI previews
+    static let previewPort = 7890
+    
     // MARK: - Profiles
     
     static let localProfile = Profile(
@@ -229,7 +232,7 @@ enum PreviewData {
           "type": "mixed",
           "tag": "mixed-in",
           "listen": "127.0.0.1",
-          "listen_port": 2080
+          "listen_port": \(previewPort)
         }
       ],
       "outbounds": [
