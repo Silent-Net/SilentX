@@ -12,6 +12,7 @@ import SwiftData
 struct ProfileSelectorView: View {
     @Query(sort: \Profile.order) private var profiles: [Profile]
     @Binding var selectedProfile: Profile?
+    var onManageProfiles: (() -> Void)? = nil
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -40,7 +41,7 @@ struct ProfileSelectorView: View {
                     Divider()
                     
                     Button {
-                        // Navigate to profiles - will be implemented with navigation
+                        onManageProfiles?()
                     } label: {
                         Label("Manage Profiles...", systemImage: "gear")
                     }

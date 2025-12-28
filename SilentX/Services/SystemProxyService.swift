@@ -58,6 +58,8 @@ final class SystemProxyService: SystemProxyServiceProtocol {
         guard let snap = snapshot else { return }
         try setProxy(service: snap.service, host: snap.httpHost, port: snap.httpPort, enable: snap.httpEnabled)
         try setProxy(service: snap.service, host: snap.httpsHost, port: snap.httpsPort, enable: snap.httpsEnabled, secure: true)
+        // Also disable SOCKS proxy - prevents stale SOCKS settings when switching configs
+        try setSOCKSProxy(service: snap.service, host: "", port: 0, enable: false)
     }
     
     // MARK: - Helpers

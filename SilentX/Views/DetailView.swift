@@ -11,6 +11,7 @@ import SwiftData
 /// Routes to the appropriate detail view based on navigation selection
 struct DetailView: View {
     let selection: NavigationItem?
+    @Binding var navigationSelection: NavigationItem?
     @EnvironmentObject var connectionService: ConnectionService
     @State private var groupsViewModel = GroupsViewModel()
     
@@ -18,7 +19,9 @@ struct DetailView: View {
         Group {
             switch selection {
             case .dashboard:
-                DashboardView()
+                DashboardView(onNavigateToProfiles: {
+                    navigationSelection = .profiles
+                })
                     .environmentObject(connectionService)
             case .groups:
                 GroupsView()
@@ -54,6 +57,7 @@ struct EmptySelectionView: View {
 }
 
 #Preview {
-    DetailView(selection: .dashboard)
+    @Previewable @State var selection: NavigationItem? = .dashboard
+    DetailView(selection: selection, navigationSelection: $selection)
         .environmentObject(ConnectionService())
 }

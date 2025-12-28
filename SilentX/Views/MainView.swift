@@ -31,7 +31,7 @@ struct MainView: View {
             SidebarView(selection: $selection)
                 .environmentObject(connectionService)
         } detail: {
-            DetailView(selection: selection)
+            DetailView(selection: selection, navigationSelection: $selection)
                 .environmentObject(connectionService)
         }
         .navigationSplitViewStyle(.balanced)

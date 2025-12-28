@@ -16,6 +16,8 @@ struct DashboardView: View {
     @AppStorage("selectedProfileID") private var selectedProfileID: String = ""
     @AppStorage("proxyMode") private var savedProxyMode: String = "rule"
     
+    var onNavigateToProfiles: (() -> Void)? = nil
+    
     @State private var selectedProfile: Profile?
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
@@ -51,7 +53,10 @@ struct DashboardView: View {
                 }
                 
                 // Profile selector
-                ProfileSelectorView(selectedProfile: $selectedProfile)
+                ProfileSelectorView(
+                    selectedProfile: $selectedProfile,
+                    onManageProfiles: onNavigateToProfiles
+                )
                     .padding(.horizontal)
                 
                 // System Proxy Controls (only visible when connected)

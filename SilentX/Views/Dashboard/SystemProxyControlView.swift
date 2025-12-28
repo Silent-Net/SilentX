@@ -11,7 +11,7 @@ import SwiftUI
 struct SystemProxyControlView: View {
     @EnvironmentObject var connectionService: ConnectionService
     
-    @State private var systemProxyEnabled = false
+    @AppStorage("systemProxyEnabled") private var systemProxyEnabled = false
     @State private var isApplying = false
     
     private var mixedPort: Int? {
@@ -60,13 +60,13 @@ struct SystemProxyControlView: View {
                 await applySystemProxy(enabled)
             }
         }
-        .onAppear {
-            loadCurrentSettings()
+        .task {
+            // Apply saved System Proxy state when view appears
+            // AppStorage already has the remembered value, just apply it if enabled
+            if systemProxyEnabled {
+                await applySystemProxy(true)
+            }
         }
-    }
-    
-    private func loadCurrentSettings() {
-        systemProxyEnabled = connectionService.isSystemHttpProxyEnabled || connectionService.isSystemSocksProxyEnabled
     }
     
     private func applySystemProxy(_ enabled: Bool) async {
@@ -79,7 +79,9 @@ struct SystemProxyControlView: View {
                 socksEnabled: enabled
             )
         } catch {
-            loadCurrentSettings()
+            // Revert toggle on error
+            systemProxyEnabled = false
+            print("[SystemProxy] Error applying proxy: \(error.localizedDescription)")
         }
     }
 }

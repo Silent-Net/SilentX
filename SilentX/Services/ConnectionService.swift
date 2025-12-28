@@ -108,9 +108,18 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
     
     /// Set system proxy settings
     func setSystemProxy(httpEnabled: Bool, socksEnabled: Bool) async throws {
-        // TODO: Implement using networksetup command
-        // networksetup -setwebproxy Wi-Fi 127.0.0.1 7890
-        // networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 7891
+        let service = SystemProxyService()
+        
+        if httpEnabled || socksEnabled {
+            // Enable proxy with the current port from active config
+            guard let port = httpPort ?? socksPort else {
+                throw ConnectionError.configurationError("No proxy port available")
+            }
+            try service.enableProxy(host: "127.0.0.1", port: port)
+        } else {
+            // Disable - restore original settings
+            try service.restoreOriginalSettings()
+        }
     }
     
     /// Change proxy mode via Clash API
