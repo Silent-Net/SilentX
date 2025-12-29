@@ -24,6 +24,9 @@ struct MainView: View {
     // Track if we've already attempted auto-connect
     @State private var hasAttemptedAutoConnect = false
     
+    // Pending navigation from MenuBar (shared via AppStorage for reliability)
+    @AppStorage("pendingNavigation") private var pendingNavigation: String = ""
+    
     var body: some View {
         NavigationSplitView {
             SidebarView(selection: $selection)
@@ -36,6 +39,27 @@ struct MainView: View {
         .task {
             await attemptAutoConnect()
         }
+        .onAppear {
+            // Check for pending navigation when view appears
+            handlePendingNavigation()
+        }
+        .onChange(of: pendingNavigation) { _, newValue in
+            // React immediately when pendingNavigation changes
+            handlePendingNavigation()
+        }
+    }
+    
+    private func handlePendingNavigation() {
+        guard !pendingNavigation.isEmpty else { return }
+        
+        if pendingNavigation == "Settings" {
+            selection = .settings
+        } else if let navItem = NavigationItem(rawValue: pendingNavigation) {
+            selection = navItem
+        }
+        
+        // Clear pending navigation after handling
+        pendingNavigation = ""
     }
     
     // MARK: - Auto-Connect

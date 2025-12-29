@@ -161,6 +161,7 @@ struct SilentXApp: App {
         #if os(macOS)
         Settings {
             SettingsView()
+                .environmentObject(ConnectionService.shared)
                 .modelContainer(sharedModelContainer)
         }
         

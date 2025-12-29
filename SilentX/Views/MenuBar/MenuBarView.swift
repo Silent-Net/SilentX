@@ -14,9 +14,6 @@ struct MenuBarView: View {
     @Query private var profiles: [Profile]
     @AppStorage("selectedProfileID") private var selectedProfileID: String = ""
     
-    // macOS 14+ Settings action
-    @Environment(\.openSettings) private var openSettingsAction
-    
     private var isConnected: Bool {
         if case .connected = connectionService.status { return true }
         return false
@@ -157,30 +154,28 @@ struct MenuBarView: View {
     
     private func openMainWindow() {
         #if os(macOS)
-        // Temporarily show in Dock to bring window forward
-        NSApp.setActivationPolicy(.regular)
+        // Instant activation - no policy switching needed
         NSApp.activate(ignoringOtherApps: true)
         
         // Find and show main window
         if let window = NSApp.windows.first(where: { 
-            $0.title.contains("SilentX") && !$0.title.contains("Settings") 
+            $0.canBecomeKey && !$0.title.contains("Settings") && $0.isVisible == false || $0.canBecomeKey
         }) {
             window.makeKeyAndOrderFront(nil)
-        } else {
-            // Create new window if none exists
-            NSApp.windows.first?.makeKeyAndOrderFront(nil)
         }
         #endif
     }
     
     private func openSettings() {
         #if os(macOS)
-        // Temporarily show in Dock to bring settings window forward
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        // Set pending navigation via AppStorage (reliable across scenes)
+        UserDefaults.standard.set("Settings", forKey: "pendingNavigation")
         
-        // Use proper SwiftUI Settings action (macOS 14+)
-        openSettingsAction()
+        // Activate app and show window
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = NSApp.windows.first(where: { $0.canBecomeKey }) {
+            window.makeKeyAndOrderFront(nil)
+        }
         #endif
     }
     
@@ -262,4 +257,10 @@ private struct MenuRow: View {
 #Preview {
     MenuBarView()
         .environmentObject(ConnectionService())
+}
+
+// MARK: - Notification Names
+
+extension Notification.Name {
+    static let navigateToSettings = Notification.Name("navigateToSettings")
 }
