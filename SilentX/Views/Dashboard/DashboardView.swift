@@ -184,7 +184,7 @@ struct DashboardView: View {
     }
 }
 
-/// Connection status section with button
+/// Connection status section with button - Apple Liquid Glass style
 struct ConnectionSection: View {
     let status: ConnectionStatus
     let onConnect: () async -> Void
@@ -205,6 +205,14 @@ struct ConnectionSection: View {
             ConnectionStatusView(status: status)
                 .padding(.horizontal)
         }
+        .padding(.vertical, 20)
+        .padding(.horizontal, 24)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
+        .padding(.horizontal)
     }
 }
 

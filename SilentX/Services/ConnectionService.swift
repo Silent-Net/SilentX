@@ -30,6 +30,10 @@ protocol ConnectionServiceProtocol: ObservableObject {
 /// Connection service that manages proxy lifecycle using ProxyEngine abstraction
 @MainActor
 final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
+    
+    // MARK: - Shared Instance
+    
+    static let shared = ConnectionService()
 
     // MARK: - Published Properties
 

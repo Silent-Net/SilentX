@@ -26,6 +26,7 @@ struct GeneralSettingsView: View {
     // Behavior settings
     @AppStorage("showInMenuBar") private var showInMenuBar = true
     @AppStorage("hideOnClose") private var hideOnClose = true
+    @AppStorage("hideFromDock") private var hideFromDock = false
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     
     // Notification settings
@@ -79,6 +80,17 @@ struct GeneralSettingsView: View {
                 Toggle("Hide window on close (keep in menu bar)", isOn: $hideOnClose)
                     .disabled(!showInMenuBar)
                 
+                #if os(macOS)
+                Toggle("Hide from Dock", isOn: Binding(
+                    get: { hideFromDock },
+                    set: { newValue in
+                        hideFromDock = newValue
+                        setDockVisibility(hidden: newValue)
+                    }
+                ))
+                .disabled(!showInMenuBar)
+                #endif
+                
                 Toggle("Launch at login", isOn: Binding(
                     get: { launchAtLogin },
                     set: { newValue in
@@ -87,6 +99,13 @@ struct GeneralSettingsView: View {
                 ))
             } header: {
                 Label("Behavior", systemImage: "rectangle.on.rectangle")
+            } footer: {
+                #if os(macOS)
+                if hideFromDock {
+                    Text("The app will only show in the menu bar. Use the menu bar icon to access SilentX.")
+                        .foregroundStyle(.orange)
+                }
+                #endif
             }
             
             // Notifications Section
@@ -210,6 +229,21 @@ struct GeneralSettingsView: View {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         #endif
     }
+    
+    /// Set dock visibility using activation policy
+    #if os(macOS)
+    private func setDockVisibility(hidden: Bool) {
+        if hidden {
+            // Hide from Dock - show only in menu bar
+            NSApp.setActivationPolicy(.accessory)
+        } else {
+            // Show in Dock normally
+            NSApp.setActivationPolicy(.regular)
+            // Bring window to front after showing in Dock
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+    #endif
 }
 
 #Preview {

@@ -38,7 +38,7 @@ enum ProxyMode: String, CaseIterable {
     }
 }
 
-/// Mode switcher view with segmented control
+/// Mode switcher view with segmented control - Apple Liquid Glass style
 struct ModeSwitcherView: View {
     @Binding var selectedMode: ProxyMode
     let isConnected: Bool
@@ -71,6 +71,12 @@ struct ModeSwitcherView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
         .padding(.horizontal)
     }
 }

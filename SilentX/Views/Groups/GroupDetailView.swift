@@ -55,15 +55,16 @@ struct GroupDetailView: View {
                         .fontWeight(.semibold)
                 }
                 
-                HStack(spacing: 8) {
-                    Label(group.typeDisplayName, systemImage: "tag")
+                // Compact subtitle: just type and count
+                HStack(spacing: 6) {
+                    Text(group.typeDisplayName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
                     Text("·")
                         .foregroundStyle(.tertiary)
                     
-                    Label("\(group.items.count) nodes", systemImage: "point.3.filled.connected.trianglepath.dotted")
+                    Text("\(group.items.count) nodes")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
@@ -71,10 +72,14 @@ struct GroupDetailView: View {
                         Text("·")
                             .foregroundStyle(.tertiary)
                         
-                        Label(group.selected, systemImage: "checkmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.green)
-                            .lineLimit(1)
+                        HStack(spacing: 2) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.caption2)
+                            Text(group.selected)
+                                .lineLimit(1)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.green)
                     }
                 }
             }

@@ -183,13 +183,13 @@ struct ConfigNodeRowView: View {
                 HStack(spacing: 8) {
                     Text(node.type.uppercased())
                         .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(typeColor.opacity(0.15))
-                        .foregroundStyle(typeColor)
-                        .cornerRadius(4)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
                     
                     if !node.server.isEmpty {
+                        Text("·")
+                            .foregroundStyle(.tertiary)
+                        
                         Text(node.serverDisplay)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -200,19 +200,6 @@ struct ConfigNodeRowView: View {
             Spacer()
         }
         .padding(.vertical, 4)
-    }
-    
-    private var typeColor: Color {
-        switch node.type.lowercased() {
-        case "trojan": return .purple
-        case "vmess", "vless": return .blue
-        case "shadowsocks", "ss": return .green
-        case "hysteria", "hysteria2": return .orange
-        case "direct": return .gray
-        case "block", "reject": return .red
-        case "selector", "urltest": return .teal
-        default: return .secondary
-        }
     }
 }
 

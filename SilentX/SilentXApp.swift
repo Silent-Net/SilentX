@@ -21,6 +21,14 @@ struct SilentXApp: App {
     /// Appearance settings
     @AppStorage("colorScheme") private var colorScheme = AppColorScheme.system
     @AppStorage("accentColor") private var accentColor = AppAccentColor.blue
+    @AppStorage("hideFromDock") private var hideFromDock = false
+    
+    /// Menu bar icon based on connection status
+    private var menuBarIconName: String {
+        // Return different icon based on connection state
+        // For now use static icon, can be enhanced to observe connection status
+        "globe.americas.fill"
+    }
     
     init() {
         // Disable window restoration during tests to prevent crash on reopening
@@ -155,6 +163,14 @@ struct SilentXApp: App {
             SettingsView()
                 .modelContainer(sharedModelContainer)
         }
+        
+        // Menu Bar Extra
+        MenuBarExtra("SilentX", systemImage: menuBarIconName) {
+            MenuBarView()
+                .environmentObject(ConnectionService.shared)
+                .modelContainer(sharedModelContainer)
+        }
+        .menuBarExtraStyle(.window)
         #endif
     }
     

@@ -55,11 +55,26 @@ final class SystemProxyService: SystemProxyServiceProtocol {
     }
     
     func restoreOriginalSettings() throws {
-        guard let snap = snapshot else { return }
-        try setProxy(service: snap.service, host: snap.httpHost, port: snap.httpPort, enable: snap.httpEnabled)
-        try setProxy(service: snap.service, host: snap.httpsHost, port: snap.httpsPort, enable: snap.httpsEnabled, secure: true)
-        // Also disable SOCKS proxy - prevents stale SOCKS settings when switching configs
-        try setSOCKSProxy(service: snap.service, host: "", port: 0, enable: false)
+        // Directly disable all proxy settings for all network services
+        // Don't rely on snapshot - it could be nil after app restart
+        guard !networkServices.isEmpty else {
+            if FeatureFlags.allowProxyNoopFallback {
+                return
+            }
+            throw SystemProxyError.commandFailed("No network services detected.")
+        }
+        
+        for service in networkServices {
+            // Disable HTTP proxy
+            try setProxy(service: service, host: "", port: 0, enable: false)
+            // Disable HTTPS proxy
+            try setProxy(service: service, host: "", port: 0, enable: false, secure: true)
+            // Disable SOCKS proxy
+            try setSOCKSProxy(service: service, host: "", port: 0, enable: false)
+        }
+        
+        print("[SystemProxy] Disabled all proxies for \(networkServices.count) services")
+        snapshot = nil
     }
     
     // MARK: - Helpers

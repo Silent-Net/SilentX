@@ -53,8 +53,11 @@ struct SystemProxyControlView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-        .cornerRadius(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
         .onChange(of: systemProxyEnabled) { _, enabled in
             Task {
                 await applySystemProxy(enabled)

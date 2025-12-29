@@ -6,5 +6,5 @@ enum FeatureFlags {
     static let disableWindowRestorationForTests = true
 
     /// Stub system proxy operations when not permitted.
-    static let allowProxyNoopFallback = true
+    static let allowProxyNoopFallback = false
 }

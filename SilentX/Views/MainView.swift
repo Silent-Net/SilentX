@@ -12,7 +12,9 @@ import SwiftData
 struct MainView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var selection: NavigationItem? = .dashboard
-    @StateObject private var connectionService: ConnectionService
+    
+    // Use shared ConnectionService to sync with MenuBar
+    private var connectionService: ConnectionService { ConnectionService.shared }
     
     // Auto-connect settings
     @AppStorage("autoConnectOnLaunch") private var autoConnectOnLaunch = false
@@ -21,10 +23,6 @@ struct MainView: View {
     
     // Track if we've already attempted auto-connect
     @State private var hasAttemptedAutoConnect = false
-
-    init() {
-        _connectionService = StateObject(wrappedValue: ConnectionService())
-    }
     
     var body: some View {
         NavigationSplitView {
