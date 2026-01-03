@@ -18,6 +18,8 @@ struct SilentXApp: App {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showWelcome = false
     
+    @Environment(\.scenePhase) private var scenePhase
+    
     /// Appearance settings
     @AppStorage("colorScheme") private var colorScheme = AppColorScheme.system
     @AppStorage("accentColor") private var accentColor = AppAccentColor.blue
@@ -83,7 +85,8 @@ struct SilentXApp: App {
             RoutingRule.self,
             CoreVersion.self
         ])
-
+        
+        // ... rest of container setup ...
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false
@@ -114,7 +117,7 @@ struct SilentXApp: App {
     }
     
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             MainView()
                 // Don't use preferredColorScheme - it conflicts with NSApp.appearance
                 // and causes lag. NSApp.appearance is the proper macOS way.
@@ -129,15 +132,29 @@ struct SilentXApp: App {
                     }
                     // Apply initial appearance immediately
                     applyColorScheme()
+                    
+                    // Apply initial dock visibility - but only hide if no windows visible
+                    // Initial launch should show in dock until user closes window
                 }
                 .onChange(of: colorScheme) { _, _ in
                     // Apply appearance change immediately when setting changes
                     applyColorScheme()
                 }
+                .onChange(of: hideFromDock) { _, newValue in
+                    // Only apply immediately if turning OFF hide from dock
+                    // When turning ON, wait until window closes
+                    if !newValue {
+                        NSApp.setActivationPolicy(.regular)
+                    }
+                }
         }
         .modelContainer(sharedModelContainer)
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1000, height: 700)
+        // Ensure only one window - matching ID prevents duplicates
+        .handlesExternalEvents(matching: Set(arrayLiteral: "main"))
+
+// ... rest of the file ...
         .commands {
             // Add app-specific commands
             SidebarCommands()
@@ -157,16 +174,11 @@ struct SilentXApp: App {
             }
         }
         
-        // Settings window
-        #if os(macOS)
-        Settings {
-            SettingsView()
-                .environmentObject(ConnectionService.shared)
-                .modelContainer(sharedModelContainer)
-        }
+        // NOTE: Removed standalone Settings scene - settings are accessed via main window navigation
         
-        // Menu Bar Extra
-        MenuBarExtra("SilentX", systemImage: menuBarIconName) {
+        #if os(macOS)
+        // Menu Bar Extra - using SF Symbol for proper rendering
+        MenuBarExtra("SilentX", systemImage: "point.3.connected.trianglepath.dotted") {
             MenuBarView()
                 .environmentObject(ConnectionService.shared)
                 .modelContainer(sharedModelContainer)
@@ -184,9 +196,25 @@ struct SilentXApp: App {
         // nil means follow system setting
         NSApp.appearance = colorScheme.nsAppearance
     }
+    
+    /// Update application activation policy based on settings
+    private func updateActivationPolicy() {
+        if hideFromDock {
+            // If hidden from dock, be an accessory app
+            // This hides the dock icon
+            NSApp.setActivationPolicy(.accessory)
+        } else {
+            // Normal app behavior
+            NSApp.setActivationPolicy(.regular)
+        }
+    }
     #else
     private func applyColorScheme() {
         // On iOS, preferredColorScheme modifier handles this
+    }
+    
+    private func updateActivationPolicy() {
+        // No-op on iOS
     }
     #endif
 }

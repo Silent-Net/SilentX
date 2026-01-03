@@ -191,7 +191,6 @@ public class SystemExtension: NSObject, OSSystemExtensionRequestDelegate {
     }
     
     public func request(_ request: OSSystemExtensionRequest, foundProperties properties: [OSSystemExtensionProperties]) {
-        logger.debug("Found \(properties.count) extension properties")
         self.properties = properties
         semaphore.signal()
     }

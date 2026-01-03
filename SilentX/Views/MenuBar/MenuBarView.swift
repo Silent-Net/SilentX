@@ -11,6 +11,8 @@ import SwiftData
 /// Menu bar dropdown view with quick connection controls
 struct MenuBarView: View {
     @EnvironmentObject var connectionService: ConnectionService
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismiss) private var dismiss  // To close menu bar popover
     @Query private var profiles: [Profile]
     @AppStorage("selectedProfileID") private var selectedProfileID: String = ""
     
@@ -154,27 +156,69 @@ struct MenuBarView: View {
     
     private func openMainWindow() {
         #if os(macOS)
-        // Instant activation - no policy switching needed
-        NSApp.activate(ignoringOtherApps: true)
+        // Dismiss menu bar popover FIRST
+        dismiss()
         
-        // Find and show main window
-        if let window = NSApp.windows.first(where: { 
-            $0.canBecomeKey && !$0.title.contains("Settings") && $0.isVisible == false || $0.canBecomeKey
-        }) {
-            window.makeKeyAndOrderFront(nil)
+        // Switch to regular mode
+        NSApp.setActivationPolicy(.regular)
+        
+        // Use async to let popover close first
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApp.activate(ignoringOtherApps: true)
+            
+            // Find existing main window (skip small popovers)
+            let mainWindows = NSApp.windows.filter { window in
+                window.canBecomeKey &&
+                window.level == .normal &&
+                window.frame.width >= 400 &&
+                window.frame.height >= 300
+            }
+            
+            if let existingWindow = mainWindows.first {
+                // Close duplicates
+                for window in mainWindows.dropFirst() {
+                    window.close()
+                }
+                existingWindow.makeKeyAndOrderFront(nil)
+                existingWindow.orderFrontRegardless()
+            } else {
+                self.openWindow(id: "main")
+            }
         }
         #endif
     }
     
     private func openSettings() {
         #if os(macOS)
-        // Set pending navigation via AppStorage (reliable across scenes)
+        // Dismiss menu bar popover FIRST
+        dismiss()
+        
+        NSApp.setActivationPolicy(.regular)
+        
+        // Set pending navigation to Settings
         UserDefaults.standard.set("Settings", forKey: "pendingNavigation")
         
-        // Activate app and show window
-        NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.canBecomeKey }) {
-            window.makeKeyAndOrderFront(nil)
+        // Use async to let popover close first
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApp.activate(ignoringOtherApps: true)
+            
+            // Find existing main window
+            let mainWindows = NSApp.windows.filter { window in
+                window.canBecomeKey &&
+                window.level == .normal &&
+                window.frame.width >= 400 &&
+                window.frame.height >= 300
+            }
+            
+            if let existingWindow = mainWindows.first {
+                for window in mainWindows.dropFirst() {
+                    window.close()
+                }
+                existingWindow.makeKeyAndOrderFront(nil)
+                existingWindow.orderFrontRegardless()
+            } else {
+                self.openWindow(id: "main")
+            }
         }
         #endif
     }
@@ -184,6 +228,7 @@ struct MenuBarView: View {
         NSApp.terminate(nil)
         #endif
     }
+
 }
 
 // MARK: - Profile Row

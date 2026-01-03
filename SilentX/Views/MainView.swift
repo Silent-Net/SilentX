@@ -7,6 +7,9 @@
 
 import SwiftUI
 import SwiftData
+#if os(macOS)
+import AppKit
+#endif
 
 /// Main view with NavigationSplitView layout
 struct MainView: View {
@@ -26,6 +29,9 @@ struct MainView: View {
     
     // Pending navigation from MenuBar (shared via AppStorage for reliability)
     @AppStorage("pendingNavigation") private var pendingNavigation: String = ""
+    
+    // Hide from Dock setting - needed to know when to hide dock on window close
+    @AppStorage("hideFromDock") private var hideFromDock = false
     
     var body: some View {
         NavigationSplitView {
@@ -47,6 +53,28 @@ struct MainView: View {
             // React immediately when pendingNavigation changes
             handlePendingNavigation()
         }
+        #if os(macOS)
+        .onDisappear {
+            // When window closes, hide from dock if setting is enabled
+            if hideFromDock {
+                // Delay slightly to ensure all window operations complete
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    // Only hide if no other main windows are visible
+                    let hasVisibleMainWindow = NSApp.windows.contains { window in
+                        window.isVisible && 
+                        window.canBecomeKey && 
+                        window.level == .normal &&
+                        !window.title.contains("Settings")
+                    }
+                    
+                    if !hasVisibleMainWindow {
+                        NSApp.setActivationPolicy(.accessory)
+                    }
+                }
+            }
+        }
+        #endif
+
     }
     
     private func handlePendingNavigation() {

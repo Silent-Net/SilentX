@@ -81,13 +81,7 @@ struct GeneralSettingsView: View {
                     .disabled(!showInMenuBar)
                 
                 #if os(macOS)
-                Toggle("Hide from Dock", isOn: Binding(
-                    get: { hideFromDock },
-                    set: { newValue in
-                        hideFromDock = newValue
-                        setDockVisibility(hidden: newValue)
-                    }
-                ))
+                Toggle("Hide from Dock", isOn: $hideFromDock)
                 .disabled(!showInMenuBar)
                 #endif
                 
@@ -230,20 +224,6 @@ struct GeneralSettingsView: View {
         #endif
     }
     
-    /// Set dock visibility using activation policy
-    #if os(macOS)
-    private func setDockVisibility(hidden: Bool) {
-        if hidden {
-            // Hide from Dock - show only in menu bar
-            NSApp.setActivationPolicy(.accessory)
-        } else {
-            // Show in Dock normally
-            NSApp.setActivationPolicy(.regular)
-            // Bring window to front after showing in Dock
-            NSApp.activate(ignoringOtherApps: true)
-        }
-    }
-    #endif
 }
 
 #Preview {

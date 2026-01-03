@@ -147,7 +147,6 @@ struct ConfigParser {
             groups.append(group)
         }
         
-        logger.info("Parsed \(groups.count) groups from config")
         return ParseResult(groups: groups, allOutbounds: allEntries)
     }
 }

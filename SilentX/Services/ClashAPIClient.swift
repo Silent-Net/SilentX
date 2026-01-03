@@ -66,13 +66,11 @@ actor ClashAPIClient {
     /// Configure the API client with a port
     func configure(port: Int) {
         self.baseURL = URL(string: "http://127.0.0.1:\(port)")
-        logger.info("Configured Clash API at port \(port)")
     }
     
     /// Configure with URL string
     func configure(urlString: String) {
         self.baseURL = URL(string: urlString)
-        logger.info("Configured Clash API at \(urlString)")
     }
     
     /// Check if API is reachable
@@ -105,7 +103,6 @@ actor ClashAPIClient {
         }
         
         let url = baseURL.appendingPathComponent("proxies")
-        logger.debug("GET \(url.absoluteString)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -141,7 +138,6 @@ actor ClashAPIClient {
                 }
             }
             
-            logger.debug("Got \(proxies.count) proxies, ordered keys: \(orderedKeys.prefix(5))")
             return ClashProxiesResponse(proxies: proxies, orderedKeys: orderedKeys)
             
         } catch let error as ClashAPIError {

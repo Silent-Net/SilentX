@@ -47,6 +47,11 @@ final class GroupsViewModel {
     /// Configure with active config path
     /// Note: ClashAPIClient is already configured with correct port by ConnectionService.connect()
     func configure(configPath: URL?) async {
+        // Skip if already configured with same path and data is loaded
+        if activeConfigPath == configPath && !groups.isEmpty && isAvailable {
+            return
+        }
+        
         activeConfigPath = configPath
         isAvailable = await clashAPI.isAvailable()
         if isAvailable {
@@ -73,7 +78,6 @@ final class GroupsViewModel {
                 do {
                     let result = try ConfigParser.parseGroups(from: configPath)
                     parsedGroups = result.groups
-                    logger.info("Parsed \(result.groups.count) groups from config file")
                 } catch {
                     logger.warning("Failed to parse config file: \(error.localizedDescription)")
                 }
@@ -100,7 +104,6 @@ final class GroupsViewModel {
             }
             
             isAvailable = true
-            logger.info("Loaded \(self.groups.count) groups")
             
         } catch let error as ClashAPIClient.ClashAPIError {
             errorMessage = error.localizedDescription

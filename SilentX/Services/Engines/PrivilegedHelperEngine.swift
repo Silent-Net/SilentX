@@ -84,7 +84,7 @@ final class PrivilegedHelperEngine: ProxyEngine {
             throw ProxyError.unknown("Cannot start - already \(status.displayText)")
         }
         
-        logger.info("Starting PrivilegedHelperEngine with config: \(config.configPath.lastPathComponent)")
+        
         statusSubject.send(.connecting)
         
         do {
@@ -106,13 +106,11 @@ final class PrivilegedHelperEngine: ProxyEngine {
             }
             
             // Send start command to service
-            logger.debug("Sending start command to service...")
             let pid = try await ipcClient.start(
                 configPath: config.configPath.path,
                 corePath: config.corePath.path,
                 systemProxy: systemProxy
             )
-            logger.info("Service started sing-box with PID \(pid)")
             
             // Trust service response - no delay needed
             // If start command succeeded, core is running
@@ -126,7 +124,6 @@ final class PrivilegedHelperEngine: ProxyEngine {
                 listenPorts: cachedPorts
             )
             statusSubject.send(.connected(info))
-            logger.info("Successfully connected via privileged helper service")
             
             // Start status polling (will verify in background)
             startPolling()

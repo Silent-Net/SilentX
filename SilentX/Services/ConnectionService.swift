@@ -156,16 +156,10 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         }
 
         lastProfile = profile
-        
-        // === DIAGNOSTIC LOGGING ===
-        print("========== CONNECTION SERVICE DIAGNOSTIC ==========")
-        print("Profile ID: \(profile.id)")
-        print("Profile name: \(profile.name)")
 
         // Create engine based on profile preference with fallback logic
         let engine: any ProxyEngine = try await selectEngine(for: profile)
         currentEngine = engine
-        print("Selected engine: \(engine.engineType)")
 
         // T021: Subscribe to engine status updates
         engine.statusPublisher
@@ -190,29 +184,13 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         // Everything else stays exactly as-is, just like terminal
         var runtimeConfigJSON = profile.configurationJSON
         runtimeConfigJSON = clearTunInterfaceName(runtimeConfigJSON)
-        print("[Config] Removed interface_name, everything else unchanged")
         
         try runtimeConfigJSON.write(to: runtimeConfigURL, atomically: true, encoding: .utf8)
         activeRuntimeConfigURL = runtimeConfigURL
         
-        // === DIAGNOSTIC: Log config paths and summary ===
-        print("Profile config URL: \(profileConfigURL.path)")
-        print("Runtime config URL: \(runtimeConfigURL.path)")
-        
-        // Parse and log inbound types
+        // Parse config for Clash API port
         if let data = runtimeConfigJSON.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let inbounds = json["inbounds"] as? [[String: Any]] {
-            let types = inbounds.compactMap { $0["type"] as? String }
-            print("Runtime config inbound types: \(types)")
-            
-            // Log TUN interface name if present
-            for inbound in inbounds where inbound["type"] as? String == "tun" {
-                if let ifName = inbound["interface_name"] as? String {
-                    print("TUN interface_name in config: \(ifName)")
-                }
-            }
-            
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             // Configure ClashAPIClient with port from config
             if let experimental = json["experimental"] as? [String: Any],
                let clashApi = experimental["clash_api"] as? [String: Any],
@@ -220,23 +198,12 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
                 // Parse port from "127.0.0.1:9099" format
                 let parts = controller.split(separator: ":")
                 if parts.count == 2, let port = Int(parts[1]) {
-                    print("[Config] Configuring ClashAPIClient with port \(port) from config")
                     await ClashAPIClient.shared.configure(port: port)
-                } else {
-                    print("[Config] WARNING: Failed to parse Clash API port from '\(controller)'")
                 }
-            } else {
-                print("[Config] WARNING: No clash_api.external_controller in config - Groups panel will not work")
             }
         }
 
         let coreURL = try resolveCoreBinary()
-        print("Core binary URL: \(coreURL.path)")
-
-        // Skip preflight check for instant connect (SFM-like behavior)
-        // The service will report errors if config is invalid
-        // Preflight was adding 1-2 seconds of delay
-        print("Skipping preflight check for instant connect")
 
         let config = ProxyConfiguration(
             profileId: profile.id,
@@ -248,6 +215,7 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         // T020: Delegate to engine.start()
         try await engine.start(config: config)
     }
+
 
     func disconnect() async throws {
         guard let engine = currentEngine else {

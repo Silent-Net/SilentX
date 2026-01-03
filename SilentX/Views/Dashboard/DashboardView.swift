@@ -129,6 +129,9 @@ struct DashboardView: View {
     }
     
     private func loadSavedProfile() {
+        // Skip if profile is already loaded
+        guard selectedProfile == nil else { return }
+        
         // Restore last selected profile (mimics SFM's SharedPreferences.selectedProfileID.get())
         if !selectedProfileID.isEmpty, let uuid = UUID(uuidString: selectedProfileID) {
             // Find profile with saved ID

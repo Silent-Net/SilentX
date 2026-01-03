@@ -45,9 +45,14 @@ struct ConfigNodeListView: View {
     @Query private var allProfiles: [Profile]
     @AppStorage("selectedProfileID") private var selectedProfileID: String = ""
     
+    // Accept preloaded nodes from parent (for instant panel switch)
+    var preloadedNodes: [ConfigNode] = []
+    
     @State private var nodes: [ConfigNode] = []
     @State private var showBuiltIn = false
     @State private var searchText = ""
+    @State private var lastParsedProfileID: String = ""  // Cache key
+    @State private var isLoading = false  // Loading state for async parsing
     
     private var selectedProfile: Profile? {
         if !selectedProfileID.isEmpty, let uuid = UUID(uuidString: selectedProfileID) {
@@ -84,6 +89,15 @@ struct ConfigNodeListView: View {
                 } description: {
                     Text("Select a profile in the Dashboard to view its nodes.")
                 }
+            } else if isLoading {
+                // Loading indicator - Apple HIG compliant
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Loading nodes...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if nodes.isEmpty {
                 ContentUnavailableView {
                     Label("No Nodes", systemImage: "server.rack")
@@ -115,10 +129,16 @@ struct ConfigNodeListView: View {
             }
         }
         .onAppear {
-            parseNodes()
+            // Use preloaded data if available (instant), otherwise parse async
+            if !preloadedNodes.isEmpty && nodes.isEmpty {
+                nodes = preloadedNodes
+            } else if nodes.isEmpty {
+                parseNodesAsync()
+            }
         }
         .onChange(of: selectedProfileID) { _, _ in
-            parseNodes()
+            lastParsedProfileID = "" // Reset cache key
+            parseNodesAsync()
         }
     }
     
@@ -131,17 +151,40 @@ struct ConfigNodeListView: View {
         .listStyle(.inset)
     }
     
-    private func parseNodes() {
+    /// Parse nodes asynchronously on background thread
+    private func parseNodesAsync() {
         guard let profile = selectedProfile else {
             nodes = []
+            lastParsedProfileID = ""
+            isLoading = false
             return
         }
         
-        guard let data = profile.configurationJSON.data(using: .utf8),
+        // Skip if already parsed for this profile
+        let profileID = profile.id.uuidString
+        guard lastParsedProfileID != profileID else { return }
+        
+        isLoading = true
+        let configJSON = profile.configurationJSON
+        
+        // Parse on background thread to avoid blocking UI
+        Task.detached(priority: .userInitiated) {
+            let parsedNodes = Self.parseNodesFromJSON(configJSON)
+            
+            await MainActor.run {
+                nodes = parsedNodes
+                lastParsedProfileID = profileID
+                isLoading = false
+            }
+        }
+    }
+    
+    /// Static parsing function for background thread execution
+    private static func parseNodesFromJSON(_ configJSON: String) -> [ConfigNode] {
+        guard let data = configJSON.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let outbounds = json["outbounds"] as? [[String: Any]] else {
-            nodes = []
-            return
+            return []
         }
         
         var parsedNodes: [ConfigNode] = []
@@ -164,7 +207,7 @@ struct ConfigNodeListView: View {
             ))
         }
         
-        nodes = parsedNodes
+        return parsedNodes
     }
 }
 

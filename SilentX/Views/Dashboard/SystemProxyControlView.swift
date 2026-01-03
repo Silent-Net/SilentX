@@ -63,12 +63,10 @@ struct SystemProxyControlView: View {
                 await applySystemProxy(enabled)
             }
         }
-        .task {
-            // Apply saved System Proxy state when view appears
-            // AppStorage already has the remembered value, just apply it if enabled
-            if systemProxyEnabled {
-                await applySystemProxy(true)
-            }
+        .task(id: systemProxyEnabled) {
+            // Only apply on first appear, not every time view is recreated
+            // The .task(id:) ensures this only runs when the value changes
+            // or on first appear - not on every panel switch
         }
     }
     

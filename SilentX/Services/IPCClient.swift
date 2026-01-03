@@ -116,7 +116,7 @@ final class IPCClient: @unchecked Sendable {
     
     /// Send a request and receive response
     func send(_ request: IPCRequest) async throws -> IPCResponse {
-        logger.debug("Sending request: \(request.cmd.rawValue)")
+        // Debug logging disabled for cleaner output
         
         // Encode request
         let encoder = JSONEncoder()
@@ -243,7 +243,7 @@ final class IPCClient: @unchecked Sendable {
         
         do {
             let ipcResponse = try decoder.decode(IPCResponse.self, from: responseData)
-            logger.debug("Received response: code=\(ipcResponse.code), message=\(ipcResponse.message)")
+            // Debug logging disabled for cleaner output
             return ipcResponse
         } catch {
             logger.error("Failed to decode response: \(error.localizedDescription)")

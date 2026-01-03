@@ -170,6 +170,9 @@ class ServiceStatusViewModel: ObservableObject {
     func startStatusRefresh() {
         refreshTask?.cancel()
         refreshTask = Task {
+            // Defer initial check to avoid blocking UI render
+            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms delay
+            
             await refreshStatus()
             
             // Periodic refresh every 5 seconds

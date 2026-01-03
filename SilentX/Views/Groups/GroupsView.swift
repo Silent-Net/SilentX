@@ -26,13 +26,23 @@ struct GroupsView: View {
             }
         }
         .navigationTitle("Groups")
-        .task {
-            await loadIfNeeded()
-        }
-        .onChange(of: connectionService.status) { _, newStatus in
-            Task {
-                await handleConnectionChange(newStatus)
+        // Only trigger load when connection status becomes .connected
+        // Using .task(id:) prevents running on every view recreation
+        .task(id: connectionStatusId) {
+            if isConnected && viewModel.groups.isEmpty {
+                await loadIfNeeded()
             }
+        }
+    }
+    
+    /// Unique ID for connection status to trigger .task(id:)
+    private var connectionStatusId: String {
+        switch connectionService.status {
+        case .connected: return "connected"
+        case .connecting: return "connecting"
+        case .disconnecting: return "disconnecting"
+        case .disconnected: return "disconnected"
+        case .error: return "error"
         }
     }
     
@@ -141,25 +151,19 @@ struct GroupsView: View {
     private func loadIfNeeded() async {
         guard isConnected else { return }
         
+        // Skip if groups are already loaded and available
+        // Skip if groups are already loaded and available
+        // This prevents redundant file I/O + network calls on every view appear
+        guard viewModel.groups.isEmpty || !viewModel.isAvailable else { return }
+        
+        // Wait for Clash API to be ready (sing-box needs time to start)
+        try? await Task.sleep(nanoseconds: 500_000_000) // 500ms delay
+        
         // ClashAPIClient is already configured with correct port by ConnectionService.connect()
         // Just pass the config path for parsing groups in correct order
         await viewModel.configure(
             configPath: connectionService.activeConfigPath
         )
-    }
-    
-    private func handleConnectionChange(_ status: ConnectionStatus) async {
-        switch status {
-        case .connected:
-            // ClashAPIClient already configured by ConnectionService
-            await viewModel.configure(
-                configPath: connectionService.activeConfigPath
-            )
-        case .disconnected, .error:
-            viewModel.clear()
-        default:
-            break
-        }
     }
 }
 

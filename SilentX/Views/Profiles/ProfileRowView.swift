@@ -13,15 +13,6 @@ struct ProfileRowView: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            profileContent
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("ProfileRow")
-    }
-    
-    @ViewBuilder
-    private var profileContent: some View {
-        HStack(spacing: 12) {
             // Profile type icon
             profileIcon
             
@@ -63,6 +54,8 @@ struct ProfileRowView: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ProfileRow")
     }
     
     private var profileIcon: some View {

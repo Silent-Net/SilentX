@@ -83,9 +83,15 @@ struct ConfigRuleListView: View {
     @Query private var allProfiles: [Profile]
     @AppStorage("selectedProfileID") private var selectedProfileID: String = ""
     
+    // Accept preloaded rules from parent (for instant panel switch)
+    var preloadedRules: [ConfigRule] = []
+    var preloadedFinal: String = ""
+    
     @State private var rules: [ConfigRule] = []
     @State private var searchText = ""
     @State private var finalOutbound: String = ""
+    @State private var lastParsedProfileID: String = ""  // Cache key
+    @State private var isLoading = false  // Loading state for async parsing
     
     private var selectedProfile: Profile? {
         if !selectedProfileID.isEmpty, let uuid = UUID(uuidString: selectedProfileID) {
@@ -111,6 +117,15 @@ struct ConfigRuleListView: View {
                 } description: {
                     Text("Select a profile in the Dashboard to view its rules.")
                 }
+            } else if isLoading {
+                // Loading indicator - Apple HIG compliant
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Loading rules...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if rules.isEmpty {
                 ContentUnavailableView {
                     Label("No Rules", systemImage: "arrow.triangle.branch")
@@ -131,10 +146,17 @@ struct ConfigRuleListView: View {
         .navigationSubtitle(finalOutbound.isEmpty ? "\(filteredRules.count) rules" : "\(filteredRules.count) rules · Final: \(finalOutbound)")
         .searchable(text: $searchText, prompt: "Search rules")
         .onAppear {
-            parseRules()
+            // Use preloaded data if available (instant), otherwise parse async
+            if !preloadedRules.isEmpty && rules.isEmpty {
+                rules = preloadedRules
+                finalOutbound = preloadedFinal
+            } else if rules.isEmpty {
+                parseRulesAsync()
+            }
         }
         .onChange(of: selectedProfileID) { _, _ in
-            parseRules()
+            lastParsedProfileID = "" // Reset cache key
+            parseRulesAsync()
         }
     }
     
@@ -147,25 +169,46 @@ struct ConfigRuleListView: View {
         .listStyle(.inset)
     }
     
-    private func parseRules() {
+    /// Parse rules asynchronously on background thread
+    private func parseRulesAsync() {
         guard let profile = selectedProfile else {
             rules = []
             finalOutbound = ""
+            lastParsedProfileID = ""
+            isLoading = false
             return
         }
         
-        guard let data = profile.configurationJSON.data(using: .utf8),
+        // Skip if already parsed for this profile
+        let profileID = profile.id.uuidString
+        guard lastParsedProfileID != profileID else { return }
+        
+        isLoading = true
+        let configJSON = profile.configurationJSON
+        
+        // Parse on background thread to avoid blocking UI
+        Task.detached(priority: .userInitiated) {
+            let result = Self.parseRulesFromJSON(configJSON)
+            
+            await MainActor.run {
+                rules = result.rules
+                finalOutbound = result.finalOutbound
+                lastParsedProfileID = profileID
+                isLoading = false
+            }
+        }
+    }
+    
+    /// Static parsing function for background thread execution
+    private static func parseRulesFromJSON(_ configJSON: String) -> (rules: [ConfigRule], finalOutbound: String) {
+        guard let data = configJSON.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let route = json["route"] as? [String: Any],
               let rulesList = route["rules"] as? [[String: Any]] else {
-            rules = []
-            finalOutbound = ""
-            return
+            return ([], "direct")
         }
         
-        // Get final outbound
-        finalOutbound = route["final"] as? String ?? "direct"
-        
+        let finalOutbound = route["final"] as? String ?? "direct"
         var parsedRules: [ConfigRule] = []
         
         for rule in rulesList {
@@ -223,7 +266,7 @@ struct ConfigRuleListView: View {
             }
         }
         
-        rules = parsedRules
+        return (parsedRules, finalOutbound)
     }
 }
 
