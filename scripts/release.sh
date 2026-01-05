@@ -143,6 +143,24 @@ fi
 
 print_step "Pre-flight checks..."
 
+# Check we're on main branch (for publish/full mode)
+if [ "$MODE" != "build" ]; then
+    CURRENT_BRANCH=$(git branch --show-current)
+    if [ "$CURRENT_BRANCH" != "main" ]; then
+        print_error "Must be on 'main' branch to publish (current: $CURRENT_BRANCH)"
+        exit 1
+    fi
+    print_success "On main branch"
+    
+    # Check for uncommitted changes
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        print_error "Working tree has uncommitted changes. Commit or stash them first."
+        git status -s
+        exit 1
+    fi
+    print_success "Working tree clean"
+fi
+
 # For publish mode, check if DMG exists
 if [ "$MODE" = "publish" ]; then
     if [ ! -f "$DMG_PATH" ]; then
