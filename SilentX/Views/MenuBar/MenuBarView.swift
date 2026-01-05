@@ -156,69 +156,26 @@ struct MenuBarView: View {
     
     private func openMainWindow() {
         #if os(macOS)
-        // Dismiss menu bar popover FIRST
+        // First dismiss the popover
         dismiss()
         
-        // Switch to regular mode
-        NSApp.setActivationPolicy(.regular)
-        
-        // Use async to let popover close first
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            NSApp.activate(ignoringOtherApps: true)
-            
-            // Find existing main window (skip small popovers)
-            let mainWindows = NSApp.windows.filter { window in
-                window.canBecomeKey &&
-                window.level == .normal &&
-                window.frame.width >= 400 &&
-                window.frame.height >= 300
-            }
-            
-            if let existingWindow = mainWindows.first {
-                // Close duplicates
-                for window in mainWindows.dropFirst() {
-                    window.close()
-                }
-                existingWindow.makeKeyAndOrderFront(nil)
-                existingWindow.orderFrontRegardless()
-            } else {
-                self.openWindow(id: "main")
-            }
+        // Post notification - App will handle window opening in stable environment
+        // Use asyncAfter to ensure popover dismiss completes first
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            NotificationCenter.default.post(name: .openMainWindow, object: nil)
         }
         #endif
     }
     
     private func openSettings() {
         #if os(macOS)
-        // Dismiss menu bar popover FIRST
+        // First dismiss the popover
         dismiss()
         
-        NSApp.setActivationPolicy(.regular)
-        
-        // Set pending navigation to Settings
-        UserDefaults.standard.set("Settings", forKey: "pendingNavigation")
-        
-        // Use async to let popover close first
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            NSApp.activate(ignoringOtherApps: true)
-            
-            // Find existing main window
-            let mainWindows = NSApp.windows.filter { window in
-                window.canBecomeKey &&
-                window.level == .normal &&
-                window.frame.width >= 400 &&
-                window.frame.height >= 300
-            }
-            
-            if let existingWindow = mainWindows.first {
-                for window in mainWindows.dropFirst() {
-                    window.close()
-                }
-                existingWindow.makeKeyAndOrderFront(nil)
-                existingWindow.orderFrontRegardless()
-            } else {
-                self.openWindow(id: "main")
-            }
+        // Post notification - App will handle window opening in stable environment
+        // Use asyncAfter to ensure popover dismiss completes first
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            NotificationCenter.default.post(name: .openMainWindow, object: "Settings")
         }
         #endif
     }
@@ -308,4 +265,5 @@ private struct MenuRow: View {
 
 extension Notification.Name {
     static let navigateToSettings = Notification.Name("navigateToSettings")
+    static let openMainWindow = Notification.Name("openMainWindow")
 }

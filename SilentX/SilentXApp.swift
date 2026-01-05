@@ -147,6 +147,7 @@ struct SilentXApp: App {
                         NSApp.setActivationPolicy(.regular)
                     }
                 }
+                .registerWithWindowManager()
         }
         .modelContainer(sharedModelContainer)
         .windowStyle(.hiddenTitleBar)
