@@ -7,9 +7,44 @@
 
 import SwiftUI
 
+/// Button size variants
+enum ConnectButtonSize {
+    case regular
+    case large
+    
+    var dimension: CGFloat {
+        switch self {
+        case .regular: return 120
+        case .large: return 150
+        }
+    }
+    
+    var iconSize: CGFloat {
+        switch self {
+        case .regular: return 32
+        case .large: return 40
+        }
+    }
+    
+    var spacing: CGFloat {
+        switch self {
+        case .regular: return 8
+        case .large: return 12
+        }
+    }
+    
+    var font: Font {
+        switch self {
+        case .regular: return .headline
+        case .large: return .title3.weight(.semibold)
+        }
+    }
+}
+
 /// Large connect/disconnect button
 struct ConnectButton: View {
     let status: ConnectionStatus
+    var size: ConnectButtonSize = .regular
     let action: () async -> Void
     
     @State private var isPressed = false
@@ -20,15 +55,15 @@ struct ConnectButton: View {
                 await action()
             }
         } label: {
-            VStack(spacing: 8) {
+            VStack(spacing: size.spacing) {
                 Image(systemName: buttonIcon)
-                    .font(.system(size: 32, weight: .medium))
+                    .font(.system(size: size.iconSize, weight: .medium))
                 
                 Text(buttonText)
-                    .font(.headline)
+                    .font(size.font)
             }
             .foregroundColor(buttonForegroundColor)
-            .frame(width: 120, height: 120)
+            .frame(width: size.dimension, height: size.dimension)
             .background(buttonBackground)
             .clipShape(Circle())
             .shadow(color: shadowColor, radius: isPressed ? 4 : 8, y: isPressed ? 2 : 4)

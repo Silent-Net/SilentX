@@ -2,7 +2,7 @@
 //  LogService.swift
 //  SilentX
 //
-//  Log service for managing and streaming log entries
+//  Log service for streaming real logs from sing-box Clash API
 //
 
 import Foundation
@@ -53,19 +53,24 @@ protocol LogServiceProtocol: ObservableObject {
     func stop()
 }
 
-/// Mock implementation of LogService for MVP development
+/// Real LogService that connects to sing-box Clash API WebSocket
 @MainActor
 final class LogService: LogServiceProtocol, ObservableObject {
     
     // MARK: - Published Properties
     
     @Published private(set) var entries: [LogEntry] = []
+    @Published private(set) var isConnected: Bool = false
+    @Published private(set) var isRunning: Bool = false
     
     // MARK: - Private Properties
     
     private let entrySubject = PassthroughSubject<LogEntry, Never>()
-    private var mockTimer: Timer?
-    private var isRunning = false
+    private var webSocketTask: URLSessionWebSocketTask?
+    private var reconnectTask: Task<Void, Never>?
+    
+    // Clash API configuration
+    private var clashAPIPort: Int = 9090
     
     // MARK: - Public Properties
     
@@ -76,29 +81,39 @@ final class LogService: LogServiceProtocol, ObservableObject {
     // MARK: - Initialization
     
     init() {
-        // Add some initial mock entries
-        addInitialLogs()
+        // Add startup log
+        addSystemLog("SilentX Log Viewer started")
+    }
+    
+    deinit {
+        reconnectTask?.cancel()
     }
     
     // MARK: - Public Methods
     
     func start() {
+        let wasRunning = isRunning
         guard !isRunning else { return }
         isRunning = true
         
-        // Start mock log generation
-        mockTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            guard let strongSelf = self else { return }
-            Task { @MainActor in
-                strongSelf.generateMockLog()
-            }
+        // Try to get the actual port from ConnectionService
+        if let port = ConnectionService.shared.clashAPIPort {
+            clashAPIPort = port
         }
+        
+        // Only show resume message if this was a resume (not initial start)
+        if wasRunning == false && entries.count > 1 {
+            addSystemLog("Log capture resumed", level: .info)
+        }
+        
+        connectWebSocket()
     }
     
     func stop() {
         isRunning = false
-        mockTimer?.invalidate()
-        mockTimer = nil
+        reconnectTask?.cancel()
+        disconnectWebSocket()
+        addSystemLog("Log capture paused", level: .info)
     }
     
     func clear() {
@@ -119,54 +134,166 @@ final class LogService: LogServiceProtocol, ObservableObject {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
     
-    // MARK: - Private Methods
+    // MARK: - WebSocket Connection
     
-    private func addInitialLogs() {
-        let initialLogs: [(LogLevel, String, String)] = [
-            (.info, LogCategory.system, "SilentX started"),
-            (.info, LogCategory.core, "Sing-Box core version 1.9.0"),
-            (.debug, LogCategory.config, "Configuration loaded successfully"),
-            (.info, LogCategory.system, "Ready to connect"),
-        ]
+    private func connectWebSocket() {
+        // Disconnect existing connection first
+        disconnectWebSocket()
         
-        for (index, log) in initialLogs.enumerated() {
-            let entry = LogEntry(
-                timestamp: Date().addingTimeInterval(Double(-initialLogs.count + index)),
-                level: log.0,
-                category: log.1,
-                message: log.2
-            )
-            entries.append(entry)
+        // Build WebSocket URL for sing-box logs
+        // Format: ws://localhost:9090/logs?level=debug
+        guard let url = URL(string: "ws://127.0.0.1:\(clashAPIPort)/logs?level=debug") else {
+            addSystemLog("Invalid WebSocket URL", level: .error)
+            return
+        }
+        
+        let session = URLSession(configuration: .default)
+        webSocketTask = session.webSocketTask(with: url)
+        webSocketTask?.resume()
+        
+        isConnected = true
+        addSystemLog("Connected to sing-box log stream")
+        
+        // Start receiving messages
+        receiveMessage()
+    }
+    
+    private func disconnectWebSocket() {
+        webSocketTask?.cancel(with: .normalClosure, reason: nil)
+        webSocketTask = nil
+        isConnected = false
+    }
+    
+    private func receiveMessage() {
+        webSocketTask?.receive { [weak self] result in
+            Task { @MainActor in
+                guard let self = self, self.isRunning else { return }
+                
+                switch result {
+                case .success(let message):
+                    self.handleMessage(message)
+                    // Continue receiving
+                    self.receiveMessage()
+                    
+                case .failure(let error):
+                    self.isConnected = false
+                    self.addSystemLog("WebSocket error: \(error.localizedDescription)", level: .warning)
+                    // Try to reconnect after delay
+                    self.scheduleReconnect()
+                }
+            }
         }
     }
     
-    private func generateMockLog() {
-        let mockLogs: [(LogLevel, String, String)] = [
-            (.debug, LogCategory.proxy, "Outbound connection established to proxy server"),
-            (.info, LogCategory.connection, "New TCP connection from 127.0.0.1:52341"),
-            (.debug, LogCategory.dns, "DNS query: google.com -> 142.250.189.206"),
-            (.trace, LogCategory.route, "Route matched: domain google.com -> proxy"),
-            (.debug, LogCategory.proxy, "Upstream latency: 45ms"),
-            (.info, LogCategory.dns, "DNS cache hit: github.com"),
-            (.warning, LogCategory.tun, "TUN device write buffer full, dropping packet"),
-            (.debug, LogCategory.connection, "Connection closed: 127.0.0.1:52341"),
-            (.info, LogCategory.core, "Statistics: ↑ 1.2 MB ↓ 5.6 MB"),
-            (.trace, LogCategory.route, "Final rule matched: direct"),
-        ]
+    private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
+        switch message {
+        case .string(let text):
+            parseLogMessage(text)
+        case .data(let data):
+            if let text = String(data: data, encoding: .utf8) {
+                parseLogMessage(text)
+            }
+        @unknown default:
+            break
+        }
+    }
+    
+    /// Parse sing-box log message JSON
+    /// Format: {"type":"info","payload":"[2465771203 2ms] outbound/trojan[🇭🇰 Gold-香港]: outbound connection to 1.2.3.4:443"}
+    private func parseLogMessage(_ text: String) {
+        guard let data = text.data(using: .utf8) else { return }
         
-        let randomLog = mockLogs.randomElement()!
+        do {
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let type = json["type"] as? String,
+               let payload = json["payload"] as? String {
+                
+                let level = parseLogLevel(type)
+                let (category, message) = parsePayload(payload)
+                
+                let entry = LogEntry(
+                    level: level,
+                    category: category,
+                    message: message
+                )
+                
+                entries.append(entry)
+                entrySubject.send(entry)
+                
+                // Limit entries to prevent memory issues
+                if entries.count > 2000 {
+                    entries.removeFirst(500)
+                }
+            }
+        } catch {
+            // If not JSON, treat as raw log
+            let entry = LogEntry(
+                level: .debug,
+                category: LogCategory.core,
+                message: text
+            )
+            entries.append(entry)
+            entrySubject.send(entry)
+        }
+    }
+    
+    private func parseLogLevel(_ type: String) -> LogLevel {
+        switch type.lowercased() {
+        case "trace": return .trace
+        case "debug": return .debug
+        case "info": return .info
+        case "warn", "warning": return .warning
+        case "error": return .error
+        case "fatal", "panic": return .fatal
+        default: return .info
+        }
+    }
+    
+    /// Parse sing-box log payload to extract category and message
+    /// Example: "[2465771203 2ms] outbound/trojan[🇭🇰 Gold-香港]: outbound connection to 1.2.3.4:443"
+    private func parsePayload(_ payload: String) -> (String, String) {
+        var message = payload
+        var category = LogCategory.core
+        
+        // Try to extract category from patterns like "outbound/trojan", "inbound/tun", "router:"
+        if payload.contains("outbound/") {
+            category = LogCategory.proxy
+        } else if payload.contains("inbound/") {
+            category = LogCategory.connection
+        } else if payload.contains("router:") || payload.contains("route") {
+            category = LogCategory.route
+        } else if payload.contains("dns") || payload.contains("DNS") {
+            category = LogCategory.dns
+        } else if payload.contains("tun") || payload.contains("TUN") {
+            category = LogCategory.tun
+        }
+        
+        return (category, message)
+    }
+    
+    private func scheduleReconnect() {
+        guard isRunning else { return }
+        
+        reconnectTask?.cancel()
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
+            guard let self = self, self.isRunning else { return }
+            await MainActor.run {
+                self.addSystemLog("Attempting to reconnect...")
+                self.connectWebSocket()
+            }
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func addSystemLog(_ message: String, level: LogLevel = .info) {
         let entry = LogEntry(
-            level: randomLog.0,
-            category: randomLog.1,
-            message: randomLog.2
+            level: level,
+            category: LogCategory.system,
+            message: message
         )
-        
         entries.append(entry)
         entrySubject.send(entry)
-        
-        // Limit entries to prevent memory issues
-        if entries.count > 1000 {
-            entries.removeFirst(100)
-        }
     }
 }

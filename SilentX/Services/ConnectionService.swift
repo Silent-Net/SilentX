@@ -74,6 +74,9 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
     /// Current proxy mode (rule/global/direct)
     @Published var proxyMode: String = "rule"
     
+    /// Clash API port from active config (for logs WebSocket)
+    @Published private(set) var clashAPIPort: Int? = 9090
+    
     /// HTTP proxy port from active config
     var httpPort: Int? {
         // Parse from active config or return default
@@ -207,6 +210,7 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
                 // Parse port from "127.0.0.1:9099" format
                 let parts = controller.split(separator: ":")
                 if parts.count == 2, let port = Int(parts[1]) {
+                    clashAPIPort = port
                     await ClashAPIClient.shared.configure(port: port)
                 }
             }

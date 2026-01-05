@@ -79,10 +79,6 @@ struct AppearanceSettingsView: View {
                 Toggle("Show speed graph", isOn: $showSpeedGraph)
             } header: {
                 Label("Dashboard", systemImage: "gauge")
-            } footer: {
-                Text("Dashboard customization coming in a future update.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             
             // Log Viewer Section
@@ -107,57 +103,9 @@ struct AppearanceSettingsView: View {
             } header: {
                 Label("Log Viewer", systemImage: "text.alignleft")
             }
-            
-            // Preview Section
-            Section {
-                previewCard
-            } header: {
-                Label("Preview", systemImage: "eye")
-            }
         }
         .formStyle(.grouped)
         .padding()
-    }
-    
-    private var previewCard: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 10, height: 10)
-                
-                Text("Connected")
-                    .font(.headline)
-                
-                Spacer()
-                
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            }
-            
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Upload")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("1.2 MB/s")
-                        .font(.system(.body, design: .monospaced))
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing) {
-                    Text("Download")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("5.6 MB/s")
-                        .font(.system(.body, design: .monospaced))
-                }
-            }
-        }
-        .padding()
-        .background(Color(.windowBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 

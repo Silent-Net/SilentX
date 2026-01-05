@@ -37,6 +37,21 @@ struct LogView: View {
         .navigationTitle("Logs")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                // Pause/Resume button
+                Button {
+                    if logService.isRunning {
+                        logService.stop()
+                    } else {
+                        logService.start()
+                    }
+                } label: {
+                    Label(
+                        logService.isRunning ? "Pause" : "Resume",
+                        systemImage: logService.isRunning ? "pause.fill" : "play.fill"
+                    )
+                }
+                .help(logService.isRunning ? "Pause log capture" : "Resume log capture")
+                
                 Toggle(isOn: $autoScroll) {
                     Label("Auto Scroll", systemImage: "arrow.down.to.line")
                 }
@@ -163,6 +178,20 @@ struct LogView: View {
     
     private var statusBar: some View {
         HStack {
+            // Pause indicator
+            if !logService.isRunning {
+                HStack(spacing: 4) {
+                    Image(systemName: "pause.circle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Paused")
+                        .foregroundStyle(.orange)
+                }
+                .font(.caption.bold())
+                
+                Divider()
+                    .frame(height: 12)
+            }
+            
             Text("\(filteredEntries.count) entries")
                 .font(.caption)
                 .foregroundStyle(.secondary)
