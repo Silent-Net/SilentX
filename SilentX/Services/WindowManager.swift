@@ -19,6 +19,9 @@ final class WindowManager {
     /// Stored openWindow action - captured from a view that has the environment
     private var storedOpenWindowAction: OpenWindowAction?
     
+    /// Track if window creation is in progress to prevent duplicate attempts
+    private var isCreatingWindow = false
+    
     private init() {
         #if os(macOS)
         // Listen for window open requests on main queue
@@ -29,9 +32,8 @@ final class WindowManager {
         ) { [weak self] notification in
             // Extract the object on the notification queue before dispatching
             let target = notification.object as? String
-            DispatchQueue.main.async {
-                self?.handleOpenMainWindow(target: target)
-            }
+            // Use sync dispatch since we're already on main queue from notification
+            self?.handleOpenMainWindow(target: target)
         }
         #endif
     }
@@ -46,6 +48,10 @@ final class WindowManager {
     /// Handle request to open main window
     /// - Parameter target: Optional navigation target (e.g., "Settings")
     private func handleOpenMainWindow(target: String?) {
+        // Prevent duplicate window creation attempts
+        guard !isCreatingWindow else { return }
+        isCreatingWindow = true
+        
         // Set navigation target if provided (e.g., "Settings")
         if let target = target {
             UserDefaults.standard.set(target, forKey: "pendingNavigation")
@@ -55,99 +61,116 @@ final class WindowManager {
         let wasAccessory = NSApp.activationPolicy() == .accessory
         if wasAccessory {
             NSApp.setActivationPolicy(.regular)
+            // Run loop to process the policy change
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
         }
         
-        // Step 2: Wait for activation policy to take effect
-        let activationDelay: TimeInterval = wasAccessory ? 0.2 : 0.05
+        // Step 2: Activate immediately (no delay for better responsiveness)
+        NSApp.activate(ignoringOtherApps: true)
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + activationDelay) { [weak self] in
-            self?.activateAndShowWindow()
+        // Step 3: Find or create window - use short delay only if was accessory
+        let delay: TimeInterval = wasAccessory ? 0.1 : 0.0
+        
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.showOrCreateWindow()
+            }
+        } else {
+            showOrCreateWindow()
         }
     }
     
-    /// Activate app and show/create main window
-    private func activateAndShowWindow() {
-        // Activate the app first
-        NSApp.activate(ignoringOtherApps: true)
+    /// Show existing window or create new one
+    private func showOrCreateWindow() {
+        defer { isCreatingWindow = false }
         
-        // Find existing main window
-        let mainWindow = findMainWindow()
-        
-        if let existingWindow = mainWindow {
-            // Window exists - bring it to front
+        // Try to find existing main window
+        if let existingWindow = findMainWindow() {
             bringWindowToFront(existingWindow)
-        } else {
-            // No window exists - create one
-            createMainWindow()
+            return
         }
+        
+        // No window exists - create one
+        createMainWindow()
     }
     
     /// Find the main application window (not menu bar or popovers)
     private func findMainWindow() -> NSWindow? {
-        return NSApp.windows.first { window in
-            // Main window criteria:
-            // - Can become key (not a panel or popover)
-            // - Normal level (not floating)
-            // - Reasonable size (not a small accessory window)
-            // - Not a status bar or popover window
-            guard window.canBecomeKey,
-                  window.level == .normal,
-                  window.contentView?.frame.width ?? 0 >= 300 else {
+        // Sort windows by key status to prefer the key window
+        let candidateWindows = NSApp.windows.filter { window in
+            // Must be able to become key
+            guard window.canBecomeKey else { return false }
+            
+            // Must be normal level (not floating panels)
+            guard window.level == .normal else { return false }
+            
+            // Must have reasonable size (not a small accessory)
+            guard window.frame.width >= 300 || window.contentView?.frame.width ?? 0 >= 300 else { return false }
+            
+            // Filter out status bar and popover windows by class name
+            let className = String(describing: type(of: window))
+            guard !className.contains("NSStatusBarWindow"),
+                  !className.contains("NSPopover"),
+                  !className.contains("_NSPopoverWindow"),
+                  !className.contains("MenuBarExtra") else {
                 return false
             }
             
-            let className = String(describing: type(of: window))
-            let isNotStatusOrPopover = !className.contains("NSStatusBarWindow") &&
-                                       !className.contains("NSPopover") &&
-                                       !className.contains("_NSPopoverWindow")
-            
-            return isNotStatusOrPopover
+            return true
         }
+        
+        // Prefer key window, then visible window, then any candidate
+        return candidateWindows.first { $0.isKeyWindow }
+            ?? candidateWindows.first { $0.isVisible }
+            ?? candidateWindows.first
     }
     
     /// Bring an existing window to front
     private func bringWindowToFront(_ window: NSWindow) {
-        // Deminiaturize if needed
+        // Deminiaturize if minimized
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
         
-        // Make sure it's visible
+        // Make visible if hidden
         if !window.isVisible {
             window.setIsVisible(true)
         }
         
-        // Bring to front
+        // Bring to front - use multiple methods for reliability
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
+        
+        // Re-activate to ensure app is in foreground
+        NSApp.activate(ignoringOtherApps: true)
     }
     
     /// Create a new main window
     private func createMainWindow() {
-        // Try using the stored openWindow action first
+        // Method 1: Use stored openWindow action (most reliable if available)
         if let openWindow = storedOpenWindowAction {
             openWindow(id: "main")
             
-            // After creating, bring to front (with small delay to let it create)
+            // Brief delay to let window create, then ensure it's visible
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 if let window = self?.findMainWindow() {
                     self?.bringWindowToFront(window)
                 }
             }
-        } else {
-            // Fallback: For SwiftUI apps, activating often creates a window automatically
-            // Try activating again - macOS may create a window for regular apps
-            NSApp.activate(ignoringOtherApps: true)
-            
-            // Final fallback: use NSApp to deminiaturize all or similar
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                if let window = self?.findMainWindow() {
-                    self?.bringWindowToFront(window)
-                } else {
-                    // If still no window, the stored action might now be available
-                    // (the activation might have triggered MainView creation)
-                    self?.storedOpenWindowAction?(id: "main")
-                }
+            return
+        }
+        
+        // Method 2: Try to trigger window creation via activation
+        // For SwiftUI apps with WindowGroup, activation in regular mode often creates a window
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Check again after a short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            if let window = self?.findMainWindow() {
+                self?.bringWindowToFront(window)
+            } else if let openWindow = self?.storedOpenWindowAction {
+                // The activation might have registered the action - try again
+                openWindow(id: "main")
             }
         }
     }

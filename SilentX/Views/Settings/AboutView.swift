@@ -7,6 +7,9 @@
 
 import SwiftUI
 import SwiftData
+#if os(macOS)
+import AppKit
+#endif
 
 /// View displaying application information and credits
 struct AboutView: View {
@@ -71,11 +74,26 @@ struct AboutView: View {
                     Label("Sing-Box Documentation", systemImage: "book")
                 }
                 
+                #if os(macOS)
                 Button {
-                    // Open support/feedback
+                    // Open default email client with feedback template
+                    let subject = "SilentX Feedback - v\(appVersion)"
+                    let body = """
+                    
+                    ---
+                    App Version: \(appVersion) (\(buildNumber))
+                    macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)
+                    """
+                    
+                    if let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                       let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                       let url = URL(string: "mailto:?subject=\(encodedSubject)&body=\(encodedBody)") {
+                        NSWorkspace.shared.open(url)
+                    }
                 } label: {
                     Label("Send Feedback", systemImage: "envelope")
                 }
+                #endif
             }
             
             Spacer()

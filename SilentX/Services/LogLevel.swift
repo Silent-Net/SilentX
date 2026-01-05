@@ -43,6 +43,16 @@ enum LogLevel: String, CaseIterable, Codable {
         }
     }
     
+    /// Text color for log messages (less saturated than icon color)
+    var textColor: Color {
+        switch self {
+        case .trace, .debug, .info: return .primary
+        case .warning: return .orange
+        case .error: return .red
+        case .fatal: return .purple
+        }
+    }
+    
     /// Severity order for filtering (higher = more severe)
     var severity: Int {
         switch self {

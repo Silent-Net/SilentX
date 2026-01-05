@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import SwiftData
+import SwiftUI
 
 // MARK: - Download Delegate
 
@@ -143,11 +144,23 @@ final class CoreVersionService: CoreVersionServiceProtocol, ObservableObject {
     @Published private(set) var availableReleases: [GitHubRelease] = []
     @Published private(set) var downloadProgress: Double = 0.0
     @Published private(set) var isDownloading: Bool = false
+    @Published var pendingUpdate: GitHubRelease?
+    
+    // MARK: - Settings
+    
+    @AppStorage("autoCheckForUpdates") private var autoCheckForUpdates = true
+    @AppStorage("autoDownloadUpdates") private var autoDownloadUpdates = false
+    @AppStorage("includePrereleases") private var includePrereleases = false
+    @AppStorage("lastUpdateCheck") private var lastUpdateCheck: Double = 0
     
     // MARK: - Private Properties
     
     private let githubService: GitHubReleaseServiceProtocol
     private let modelContext: ModelContext
+    private var autoCheckTask: Task<Void, Never>?
+    
+    // Check interval: 6 hours
+    private let updateCheckInterval: TimeInterval = 6 * 60 * 60
     
     // MARK: - Initialization
     
@@ -155,6 +168,68 @@ final class CoreVersionService: CoreVersionServiceProtocol, ObservableObject {
         self.githubService = githubService
         self.modelContext = modelContext
         loadPersistedVersions()
+        
+        // Start auto-check if enabled
+        scheduleAutoCheck()
+    }
+    
+    deinit {
+        autoCheckTask?.cancel()
+    }
+    
+    // MARK: - Auto Update Check
+    
+    /// Schedule automatic update check based on settings
+    private func scheduleAutoCheck() {
+        autoCheckTask?.cancel()
+        
+        guard autoCheckForUpdates else { return }
+        
+        autoCheckTask = Task { [weak self] in
+            // Check if enough time has passed since last check
+            let now = Date().timeIntervalSince1970
+            let lastCheck = self?.lastUpdateCheck ?? 0
+            let timeSinceLastCheck = now - lastCheck
+            
+            // If less than interval, wait for remaining time
+            if timeSinceLastCheck < (self?.updateCheckInterval ?? 0) {
+                let waitTime = (self?.updateCheckInterval ?? 0) - timeSinceLastCheck
+                try? await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
+            }
+            
+            // Perform check
+            await self?.performAutoCheck()
+        }
+    }
+    
+    /// Perform automatic update check
+    private func performAutoCheck() async {
+        guard autoCheckForUpdates else { return }
+        
+        do {
+            if let update = try await checkForUpdates() {
+                // Filter by prerelease setting
+                if update.prerelease && !includePrereleases {
+                    return
+                }
+                
+                pendingUpdate = update
+                
+                // Auto-download if enabled
+                if autoDownloadUpdates {
+                    try await downloadVersion(update)
+                }
+            }
+            
+            // Update last check time
+            lastUpdateCheck = Date().timeIntervalSince1970
+            
+        } catch {
+            print("Auto update check failed: \(error)")
+        }
+        
+        // Schedule next check
+        scheduleAutoCheck()
     }
     
     // MARK: - Public Methods
@@ -359,12 +434,17 @@ final class CoreVersionService: CoreVersionServiceProtocol, ObservableObject {
     func checkForUpdates() async throws -> GitHubRelease? {
         try await fetchAvailableReleases()
         
+        // Filter releases by prerelease setting
+        let filteredReleases = includePrereleases 
+            ? availableReleases 
+            : availableReleases.filter { !$0.prerelease }
+        
         guard let currentVersion = activeVersion?.version else {
-            return availableReleases.first
+            return filteredReleases.first
         }
         
         // Check if latest release is newer than current
-        if let latestRelease = availableReleases.first,
+        if let latestRelease = filteredReleases.first,
            latestRelease.versionString != currentVersion {
             return latestRelease
         }

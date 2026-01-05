@@ -202,29 +202,34 @@ struct LogView: View {
 struct LogEntryRowView: View {
     let entry: LogEntry
     
+    // Appearance settings
+    @AppStorage("logFontSize") private var logFontSize = 12.0
+    @AppStorage("logColorCoding") private var logColorCoding = true
+    
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             // Timestamp
             Text(entry.formattedTime)
-                .font(.system(.caption, design: .monospaced))
+                .font(.system(size: logFontSize, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .frame(width: 80, alignment: .leading)
             
             // Level indicator
             Image(systemName: entry.level.iconName)
-                .font(.caption)
-                .foregroundStyle(entry.level.color)
+                .font(.system(size: logFontSize))
+                .foregroundStyle(logColorCoding ? entry.level.color : .secondary)
                 .frame(width: 16)
             
             // Category
             Text(entry.category)
-                .font(.caption)
+                .font(.system(size: logFontSize))
                 .foregroundStyle(.secondary)
                 .frame(width: 80, alignment: .leading)
             
             // Message
             Text(entry.message)
-                .font(.system(.caption, design: .monospaced))
+                .font(.system(size: logFontSize, design: .monospaced))
+                .foregroundStyle(logColorCoding ? entry.level.textColor : .primary)
                 .lineLimit(3)
         }
         .padding(.vertical, 2)

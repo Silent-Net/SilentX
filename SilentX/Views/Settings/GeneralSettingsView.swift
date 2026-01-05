@@ -37,6 +37,7 @@ struct GeneralSettingsView: View {
     // Alert states
     @State private var showResetConfirmation = false
     @State private var showResetSuccess = false
+    @State private var showRestartRequired = false
     
     var body: some View {
         Form {
@@ -76,6 +77,9 @@ struct GeneralSettingsView: View {
             // Behavior Section
             Section {
                 Toggle("Show in menu bar", isOn: $showInMenuBar)
+                    .onChange(of: showInMenuBar) { _, _ in
+                        showRestartRequired = true
+                    }
                 
                 Toggle("Hide window on close (keep in menu bar)", isOn: $hideOnClose)
                     .disabled(!showInMenuBar)
@@ -148,6 +152,11 @@ struct GeneralSettingsView: View {
             Button("OK") { }
         } message: {
             Text("All settings have been reset to their default values.")
+        }
+        .alert("Restart Required", isPresented: $showRestartRequired) {
+            Button("OK") { }
+        } message: {
+            Text("Changes to menu bar visibility require restarting SilentX to take effect.")
         }
     }
     

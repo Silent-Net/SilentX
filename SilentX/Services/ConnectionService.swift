@@ -11,6 +11,9 @@ import Combine
 import SwiftData
 import Darwin.POSIX.net
 import Darwin.POSIX.ifaddrs
+#if os(macOS)
+import UserNotifications
+#endif
 
 /// Protocol for connection service
 protocol ConnectionServiceProtocol: ObservableObject {
@@ -52,6 +55,12 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
     
     @AppStorage("autoReconnectOnDisconnect") private var autoReconnectOnDisconnect = true
     @AppStorage("reconnectDelay") private var reconnectDelay = 5.0
+    
+    // MARK: - Settings (Notifications)
+    
+    @AppStorage("notifyOnConnect") private var notifyOnConnect = true
+    @AppStorage("notifyOnDisconnect") private var notifyOnDisconnect = true
+    @AppStorage("notifyOnError") private var notifyOnError = true
 
     // MARK: - Public Accessors
     
@@ -265,6 +274,9 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
         let previousStatus = status
         status = newStatus
         
+        // Send notifications based on status changes
+        sendNotificationIfNeeded(from: previousStatus, to: newStatus)
+        
         // Check for unexpected disconnection (was connected, now disconnected/error)
         switch (previousStatus, newStatus) {
         case (.connected, .disconnected), (.connected, .error):
@@ -276,6 +288,58 @@ final class ConnectionService: ConnectionServiceProtocol, ObservableObject {
             break
         }
     }
+    
+    /// Send system notification based on status change
+    private func sendNotificationIfNeeded(from oldStatus: ConnectionStatus, to newStatus: ConnectionStatus) {
+        #if os(macOS)
+        switch newStatus {
+        case .connected(let info):
+            if notifyOnConnect && !oldStatus.isConnected {
+                sendNotification(
+                    title: "Connected",
+                    body: "SilentX is now connected via \(info.engineType.displayName)"
+                )
+            }
+        case .disconnected:
+            if notifyOnDisconnect && oldStatus.isConnected {
+                sendNotification(
+                    title: "Disconnected",
+                    body: "SilentX proxy connection has been stopped"
+                )
+            }
+        case .error(let error):
+            if notifyOnError {
+                sendNotification(
+                    title: "Connection Error",
+                    body: error.localizedDescription
+                )
+            }
+        default:
+            break
+        }
+        #endif
+    }
+    
+    #if os(macOS)
+    /// Send a macOS notification using UserNotifications framework
+    private func sendNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil // Deliver immediately
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Failed to send notification: \(error)")
+            }
+        }
+    }
+    #endif
     
     /// Schedule a reconnection attempt after the configured delay
     private func scheduleReconnect(profile: Profile) {

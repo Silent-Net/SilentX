@@ -30,8 +30,10 @@ struct MainView: View {
     // Pending navigation from MenuBar (shared via AppStorage for reliability)
     @AppStorage("pendingNavigation") private var pendingNavigation: String = ""
     
-    // Hide from Dock setting - needed to know when to hide dock on window close
+    // Window behavior settings
     @AppStorage("hideFromDock") private var hideFromDock = false
+    @AppStorage("hideOnClose") private var hideOnClose = true
+    @AppStorage("showInMenuBar") private var showInMenuBar = true
     
     var body: some View {
         NavigationSplitView {
@@ -54,25 +56,13 @@ struct MainView: View {
             handlePendingNavigation()
         }
         #if os(macOS)
-        .onDisappear {
-            // When window closes, hide from dock if setting is enabled
-            if hideFromDock {
-                // Delay slightly to ensure all window operations complete
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    // Only hide if no other main windows are visible
-                    let hasVisibleMainWindow = NSApp.windows.contains { window in
-                        window.isVisible && 
-                        window.canBecomeKey && 
-                        window.level == .normal &&
-                        !window.title.contains("Settings")
-                    }
-                    
-                    if !hasVisibleMainWindow {
-                        NSApp.setActivationPolicy(.accessory)
-                    }
-                }
-            }
-        }
+        .background(
+            // Window close interceptor - hide instead of close when enabled
+            WindowCloseInterceptor(
+                hideOnClose: hideOnClose && showInMenuBar,
+                hideFromDock: hideFromDock
+            )
+        )
         #endif
 
     }
@@ -134,4 +124,96 @@ struct MainView: View {
         .frame(width: 900, height: 600)
         .modelContainer(for: [Profile.self, ProxyNode.self, RoutingRule.self, CoreVersion.self], inMemory: true)
 }
+
+// MARK: - Window Close Interceptor
+
+#if os(macOS)
+/// Intercepts window close to hide instead of close when "Hide on Close" is enabled
+struct WindowCloseInterceptor: NSViewRepresentable {
+    let hideOnClose: Bool
+    let hideFromDock: Bool
+    
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window {
+                context.coordinator.setupWindowDelegate(for: window)
+            }
+        }
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.hideOnClose = hideOnClose
+        context.coordinator.hideFromDock = hideFromDock
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(hideOnClose: hideOnClose, hideFromDock: hideFromDock)
+    }
+    
+    class Coordinator: NSObject, NSWindowDelegate {
+        var hideOnClose: Bool
+        var hideFromDock: Bool
+        private weak var originalDelegate: NSWindowDelegate?
+        private weak var observedWindow: NSWindow?
+        
+        init(hideOnClose: Bool, hideFromDock: Bool) {
+            self.hideOnClose = hideOnClose
+            self.hideFromDock = hideFromDock
+        }
+        
+        func setupWindowDelegate(for window: NSWindow) {
+            guard observedWindow !== window else { return }
+            observedWindow = window
+            originalDelegate = window.delegate
+            window.delegate = self
+        }
+        
+        // Intercept window close
+        func windowShouldClose(_ sender: NSWindow) -> Bool {
+            if hideOnClose {
+                // Hide the window instead of closing
+                sender.orderOut(nil)
+                
+                // Hide from dock if enabled
+                if hideFromDock {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        let hasVisibleMainWindow = NSApp.windows.contains { window in
+                            window.isVisible && 
+                            window.canBecomeKey && 
+                            window.level == .normal
+                        }
+                        
+                        if !hasVisibleMainWindow {
+                            NSApp.setActivationPolicy(.accessory)
+                        }
+                    }
+                }
+                
+                return false // Don't close
+            }
+            
+            // Forward to original delegate if exists
+            if let original = originalDelegate {
+                return original.windowShouldClose?(sender) ?? true
+            }
+            return true
+        }
+        
+        // Forward other delegate methods
+        func windowWillClose(_ notification: Notification) {
+            originalDelegate?.windowWillClose?(notification)
+        }
+        
+        func windowDidBecomeKey(_ notification: Notification) {
+            originalDelegate?.windowDidBecomeKey?(notification)
+        }
+        
+        func windowDidResignKey(_ notification: Notification) {
+            originalDelegate?.windowDidResignKey?(notification)
+        }
+    }
+}
+#endif
 

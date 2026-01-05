@@ -79,6 +79,10 @@ struct AppearanceSettingsView: View {
                 Toggle("Show speed graph", isOn: $showSpeedGraph)
             } header: {
                 Label("Dashboard", systemImage: "gauge")
+            } footer: {
+                Text("Dashboard customization coming in a future update.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             
             // Log Viewer Section

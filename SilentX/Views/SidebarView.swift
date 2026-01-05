@@ -15,6 +15,7 @@ struct SidebarView: View {
     
     // Appearance settings
     @AppStorage("sidebarIconsOnly") private var sidebarIconsOnly = false
+    @AppStorage("showConnectionStats") private var showConnectionStats = true
     
     var body: some View {
         List(selection: $selection) {
@@ -24,6 +25,13 @@ struct SidebarView: View {
                     NavigationLink(value: item) {
                         sidebarLabel(for: item)
                     }
+                }
+            }
+            
+            // Connection stats section (when enabled)
+            if showConnectionStats && !sidebarIconsOnly {
+                Section {
+                    connectionStatsView
                 }
             }
             
@@ -44,6 +52,39 @@ struct SidebarView: View {
             ToolbarItem(placement: .automatic) {
                 ConnectionStatusBadge(status: connectionService.status)
             }
+        }
+    }
+    
+    /// Connection statistics view for sidebar
+    @ViewBuilder
+    private var connectionStatsView: some View {
+        if case .connected(let info) = connectionService.status {
+            VStack(alignment: .leading, spacing: 8) {
+                // Connection duration
+                HStack {
+                    Image(systemName: "clock")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(info.formattedDuration)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                // Engine type
+                HStack {
+                    Image(systemName: "gearshape.2")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(info.engineType.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        } else {
+            Text("Not connected")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
     }
     
